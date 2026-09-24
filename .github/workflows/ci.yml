@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # Apple silicon, the only platform imagine supports.
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+        if: matrix.node != 20 # Node 20 can't run .ts tests directly; it still type-checks and builds.
+      - run: npm run build
+      - run: node dist/cli.js --help

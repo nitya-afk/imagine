@@ -1,0 +1,54 @@
+{
+  "name": "imagine-local",
+  "version": "1.0.0",
+  "description": "Local image generation on your Mac with Ollama image models: a CLI plus an OpenAI-compatible images API.",
+  "type": "module",
+  "bin": {
+    "imagine": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "check": "tsc -p tsconfig.check.json",
+    "test": "node --test \"test/*.test.ts\"",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "keywords": [
+    "ollama",
+    "image-generation",
+    "flux",
+    "text-to-image",
+    "openai",
+    "mlx",
+    "apple-silicon",
+    "local-ai"
+  ],
+  "author": "Nitya Prakhar",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nitya-afk/imagine.git"
+  },
+  "homepage": "https://github.com/nitya-afk/imagine#readme",
+  "bugs": {
+    "url": "https://github.com/nitya-afk/imagine/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  }
+}

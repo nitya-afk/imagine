@@ -1,0 +1,240 @@
+diff --git a/x/create/client/create.go b/x/create/client/create.go
+index c4f6175..492272c 100644
+--- a/x/create/client/create.go
++++ b/x/create/client/create.go
+@@ -154,6 +154,10 @@ func CreateModel(opts CreateOptions, p *progress.Progress) error {
+ 		return fmt.Errorf("unsupported --draft-quantize %q: supported types are int4, int8, nvfp4, mxfp4, mxfp8", opts.DraftQuantize)
+ 	}
+ 
++	if !isSafetensors && !hasDraft && create.IsTensorModelDir(opts.ModelDir) {
++		return createImageGenModel(opts, p)
++	}
++
+ 	if !isSafetensors && !isBaseModelWithDraft {
+ 		return fmt.Errorf("%s is not a supported safetensors model directory (needs config.json + *.safetensors)", opts.ModelDir)
+ 	}
+@@ -233,6 +237,31 @@ func CreateModel(opts CreateOptions, p *progress.Progress) error {
+ 	return nil
+ }
+ 
++// createImageGenModel imports a diffusers image pipeline (model_index.json plus component folders).
++func createImageGenModel(opts CreateOptions, p *progress.Progress) error {
++	spinner := progress.NewSpinner("importing image generation model")
++	p.Add("imagegen", spinner)
++	progressFn := func(msg string) {
++		spinner.Stop()
++		spinner = progress.NewSpinner(msg)
++		p.Add("imagegen", spinner)
++	}
++
++	err := create.CreateImageGenModel(
++		opts.ModelName, opts.ModelDir, opts.Quantize,
++		create.StoreFromLayerCreator(newLayerCreator()),
++		newManifestWriter(opts, []string{"image"}, "", ""),
++		progressFn,
++	)
++	spinner.Stop()
++	if err != nil {
++		return err
++	}
++
++	fmt.Printf("Created image generation model '%s'\n", opts.ModelName)
++	return nil
++}
++
+ func appendLayersManifestWriter(next create.ManifestWriter, extra []create.LayerInfo) create.ManifestWriter {
+ 	return func(modelName string, config create.LayerInfo, layers []create.LayerInfo) error {
+ 		layers = append(layers, extra...)
+diff --git a/x/create/imagegen.go b/x/create/imagegen.go
+new file mode 100644
+index 0000000..075e8f4
+--- /dev/null
++++ b/x/create/imagegen.go
+@@ -0,0 +1,187 @@
++package create
++
++import (
++	"bytes"
++	"encoding/json"
++	"fmt"
++	"io"
++	"os"
++	"path/filepath"
++	"slices"
++	"strings"
++
++	"github.com/ollama/ollama/x/quant"
++	"github.com/ollama/ollama/x/safetensors"
++)
++
++// imageGenComponents are the diffusers pipeline folders that hold weights.
++var imageGenComponents = []string{"text_encoder", "transformer", "vae"}
++
++// imageGenConfigFiles are the pipeline configs the image runner reads.
++var imageGenConfigFiles = []string{
++	"model_index.json",
++	"text_encoder/config.json",
++	"text_encoder/generation_config.json",
++	"transformer/config.json",
++	"vae/config.json",
++	"scheduler/scheduler_config.json",
++	"tokenizer/tokenizer.json",
++	"tokenizer/tokenizer_config.json",
++	"tokenizer/vocab.json",
++}
++
++// CreateImageGenModel imports a diffusers image pipeline (model_index.json plus one folder per
++// component) into tensor and config layers. With quantize set (int4 or int8), linear weights in the
++// text encoder and transformer are quantized on the MLX thread; the VAE, embeddings and norms keep
++// their precision.
++func CreateImageGenModel(modelName, modelDir, quantize string, store BlobStore, writeManifest ManifestWriter, fn func(status string)) error {
++	if quantize != "" {
++		quantize = quant.Canonical(quantize)
++		// The image runner has quantized-matmul kernels only for the affine formats; nvfp4 and mxfp8
++		// weights go through a load-time dequantize path that fails in this release.
++		if !slices.Contains([]string{"int4", "int8"}, quantize) {
++			return fmt.Errorf("unsupported quantization type %q for image models: supported types are int4 and int8", quantize)
++		}
++		if !QuantizeSupported() {
++			return fmt.Errorf("quantization needs MLX, which could not be loaded")
++		}
++	}
++
++	var layers []LayerInfo
++	var totalParams int64
++	for _, component := range imageGenComponents {
++		dir := filepath.Join(modelDir, component)
++		entries, err := os.ReadDir(dir)
++		if os.IsNotExist(err) {
++			continue
++		} else if err != nil {
++			return fmt.Errorf("failed to read %s: %w", component, err)
++		}
++
++		for _, entry := range entries {
++			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".safetensors") {
++				continue
++			}
++			componentLayers, params, err := importImageGenFile(filepath.Join(dir, entry.Name()), component, quantize, store, fn)
++			if err != nil {
++				return err
++			}
++			layers = append(layers, componentLayers...)
++			totalParams += params
++		}
++	}
++	if len(layers) == 0 {
++		return fmt.Errorf("no safetensors weights found in %s", modelDir)
++	}
++
++	var configLayer LayerInfo
++	for _, cfgPath := range imageGenConfigFiles {
++		fullPath := filepath.Join(modelDir, cfgPath)
++		data, err := os.ReadFile(fullPath)
++		if os.IsNotExist(err) {
++			continue
++		} else if err != nil {
++			return fmt.Errorf("failed to read %s: %w", cfgPath, err)
++		}
++		if cfgPath == "model_index.json" {
++			if data, err = normalizeModelIndex(data, totalParams, quantize, modelDir); err != nil {
++				return fmt.Errorf("failed to parse %s: %w", cfgPath, err)
++			}
++		}
++
++		fn(fmt.Sprintf("importing config %s", cfgPath))
++		layer, err := store.WriteBlob(bytes.NewReader(data), mediaTypeImageJSON, cfgPath)
++		if err != nil {
++			return fmt.Errorf("failed to create layer for %s: %w", cfgPath, err)
++		}
++		if cfgPath == "model_index.json" {
++			configLayer = layer
++		}
++		layers = append(layers, layer)
++	}
++	if configLayer.Digest == "" {
++		return fmt.Errorf("model_index.json not found in %s", modelDir)
++	}
++
++	fn(fmt.Sprintf("writing manifest for %s", modelName))
++	if err := writeManifest(modelName, configLayer, layers); err != nil {
++		return fmt.Errorf("failed to write manifest: %w", err)
++	}
++	return nil
++}
++
++// importImageGenFile writes one layer per tensor in a component's safetensors file. Each layer is
++// named "component/tensor"; quantized blobs hold the weight plus its .scale (and .bias).
++func importImageGenFile(path, component, quantize string, store BlobStore, fn func(string)) ([]LayerInfo, int64, error) {
++	extractor, err := safetensors.OpenForExtraction(path)
++	if err != nil {
++		return nil, 0, fmt.Errorf("failed to open %s: %w", path, err)
++	}
++	defer extractor.Close()
++
++	names := extractor.ListTensors()
++	status := fmt.Sprintf("importing %s/%s (%d tensors", component, filepath.Base(path), len(names))
++	if quantize != "" && component != "vae" {
++		status += ", quantizing to " + quantize
++	}
++	fn(status + ")")
++
++	var layers []LayerInfo
++	var params int64
++	for _, name := range names {
++		td, err := extractor.GetTensor(name)
++		if err != nil {
++			return nil, 0, fmt.Errorf("failed to read tensor %s: %w", name, err)
++		}
++		count := int64(1)
++		for _, d := range td.Shape {
++			count *= int64(d)
++		}
++		params += count
++
++		var r io.Reader
++		if quantize != "" && len(td.Shape) == 2 && ShouldQuantize(name, component) && isAligned(td.Shape, quantize) {
++			blob, err := quantizeBlob([]quantizeItem{{name: name, quantize: quantize, reader: td.WithName(name).SafetensorsReader()}})
++			if err != nil {
++				return nil, 0, fmt.Errorf("failed to quantize %s/%s: %w", component, name, err)
++			}
++			r = bytes.NewReader(blob)
++		} else {
++			r = td.WithName(name).SafetensorsReader()
++		}
++
++		layer, err := store.WriteBlob(r, mediaTypeImageTensor, component+"/"+name)
++		if err != nil {
++			return nil, 0, fmt.Errorf("failed to write %s/%s: %w", component, name, err)
++		}
++		layers = append(layers, layer)
++	}
++	return layers, params, nil
++}
++
++// normalizeModelIndex turns diffusers' model_index.json into the form the image runner reads:
++// _class_name becomes architecture, and the parameter count and quantization are recorded.
++func normalizeModelIndex(data []byte, totalParams int64, quantize, modelDir string) ([]byte, error) {
++	var cfg map[string]any
++	if err := json.Unmarshal(data, &cfg); err != nil {
++		return nil, err
++	}
++	if className, ok := cfg["_class_name"]; ok {
++		cfg["architecture"] = className
++		delete(cfg, "_class_name")
++	}
++	delete(cfg, "_diffusers_version")
++	cfg["parameter_count"] = totalParams
++
++	if quantize != "" {
++		cfg["quantization"] = strings.ToUpper(quantize)
++	} else if raw, err := os.ReadFile(filepath.Join(modelDir, "text_encoder", "config.json")); err == nil {
++		var te struct {
++			TorchDtype string `json:"torch_dtype"`
++		}
++		if json.Unmarshal(raw, &te) == nil && te.TorchDtype != "" {
++			cfg["quantization"] = te.TorchDtype
++		}
++	}
++	return json.MarshalIndent(cfg, "", "    ")
++}

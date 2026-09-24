@@ -1,0 +1,60 @@
+diff --git a/x/imagegen/imagegen.go b/x/imagegen/imagegen.go
+index c4b5865..5925a6c 100644
+--- a/x/imagegen/imagegen.go
++++ b/x/imagegen/imagegen.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"fmt"
++	"image"
+ 	"log/slog"
+ 	"net/http"
+ 	"sync"
+@@ -20,6 +21,13 @@ type ImageModel interface {
+ 	GenerateImage(ctx context.Context, prompt string, width, height int32, steps int, seed int64, progress func(step, total int)) (*mlx.Array, error)
+ }
+ 
++// ImageEditModel is an ImageModel that can condition generation on input images.
++// FLUX.2 implements it; 0.32.5 never dispatched to it, so input images were dropped.
++type ImageEditModel interface {
++	ImageModel
++	GenerateImageWithInputs(ctx context.Context, prompt string, width, height int32, steps int, seed int64, inputImages []image.Image, progress func(step, total int)) (*mlx.Array, error)
++}
++
+ var imageGenMu sync.Mutex
+ 
+ // loadImageModel loads an image generation model.
+@@ -91,8 +99,31 @@ func (s *server) handleImageCompletion(w http.ResponseWriter, r *http.Request, r
+ 		flusher.Flush()
+ 	}
+ 
+-	// Generate image
+-	img, err := s.imageModel.GenerateImage(ctx, req.Prompt, req.Width, req.Height, req.Steps, req.Seed, progress)
++	// Decode input images (EXIF-rotated, alpha flattened) for editing.
++	var inputImages []image.Image
++	for i, raw := range req.Images {
++		decoded, err := DecodeImage(raw)
++		if err != nil {
++			http.Error(w, fmt.Sprintf("invalid input image %d: %v", i+1, err), http.StatusBadRequest)
++			return
++		}
++		inputImages = append(inputImages, decoded)
++	}
++
++	// Edit when input images are present, plain generation otherwise.
++	var img *mlx.Array
++	var err error
++	if len(inputImages) > 0 {
++		editModel, ok := s.imageModel.(ImageEditModel)
++		if !ok {
++			http.Error(w, "this model does not support image editing", http.StatusBadRequest)
++			return
++		}
++		slog.Info("generating image with input conditioning", "images", len(inputImages))
++		img, err = editModel.GenerateImageWithInputs(ctx, req.Prompt, req.Width, req.Height, req.Steps, req.Seed, inputImages, progress)
++	} else {
++		img, err = s.imageModel.GenerateImage(ctx, req.Prompt, req.Width, req.Height, req.Steps, req.Seed, progress)
++	}
+ 	if err != nil {
+ 		// Don't send error for cancellation
+ 		if ctx.Err() != nil {
