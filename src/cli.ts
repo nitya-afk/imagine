@@ -59,7 +59,7 @@ Generate options
       --seed <n>         seed, to reproduce an image
   -n, --count <n>        how many images to make (default 1)
   -o, --out <path>       folder, or a .png file name (default ${OUTPUT_DIR})
-      --open             open the image when it's done
+      --no-open          don't open the result in Preview (it opens by default in a terminal)
 
 Create options
       --from <src>       local diffusers folder, or Hugging Face repo (owner/name)
@@ -87,6 +87,7 @@ function parse(argv: string[]) {
       count: { type: 'string', short: 'n' },
       out: { type: 'string', short: 'o' },
       open: { type: 'boolean' },
+      'no-open': { type: 'boolean' },
       force: { type: 'boolean' },
       from: { type: 'string' },
       quantize: { type: 'string', short: 'q' },
@@ -174,8 +175,17 @@ async function generate(prompt: string, values: Values): Promise<number> {
     console.log(file);
     saved.push(file);
   }
-  if (values.open) execFile('open', saved);
+  if (shouldOpen(values)) execFile('open', saved);
   return 0;
+}
+
+/**
+ * Pop the result open in Preview when a person is at the terminal. Scripts, pipes and AI assistants
+ * (stdout not a TTY) only get the path, unless they ask with --open.
+ */
+function shouldOpen(values: Values): boolean {
+  if (values['no-open'] || process.env.IMAGINE_OPEN === '0') return false;
+  return values.open === true || process.stdout.isTTY === true;
 }
 
 function outputPath(out: string | undefined, prompt: string, seed: number, index: number, count: number): string {

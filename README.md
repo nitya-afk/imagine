@@ -62,16 +62,16 @@ imagine pull
 **5. Make your first image:**
 
 ```bash
-imagine "a red fox in a snowy forest at golden hour" --open
+imagine "a red fox in a snowy forest at golden hour"
 ```
 
-The first run also downloads the image engine (115 MB, one time) and loads the model, so allow a minute. After that, a 1024×1024 image takes about 15–25 seconds. Images are saved to `~/Pictures/imagine`, and `--open` shows the result in Preview.
+The first run also downloads the image engine (115 MB, one time) and loads the model, so allow a minute. After that, a 1024×1024 image takes about 15–25 seconds. Each image opens in Preview as soon as it's ready, and is saved to `~/Pictures/imagine`.
 
 ## Generate and edit
 
 ```bash
 imagine "a red apple on a wooden table, soft window light"
-imagine "neon city at night" --size 1536x1024 --open     # landscape
+imagine "neon city at night" --size 1536x1024           # landscape
 imagine "a lighthouse at dusk" --seed 42                 # the same seed gives the same image
 imagine "a teapot" -n 4 -o ~/Desktop/teapots             # four variations in a folder
 ```
@@ -94,9 +94,9 @@ Without `--size`, the edited image keeps the input's shape. There's no mask or b
 | `--seed` | random | written into the filename so you can reproduce an image |
 | `-n, --count` | `1` | how many images to make |
 | `-o, --out` | `~/Pictures/imagine` | a folder, or a `.png` file name |
-| `--open` | | open the result in Preview |
+| `--no-open` | | don't open the result in Preview (it opens automatically when you run `imagine` in Terminal) |
 
-Only the saved file path goes to the terminal's output, so `imagine` works in scripts: `open "$(imagine 'a fox')"`.
+Only the saved file path goes to the terminal's output, and nothing pops open when `imagine` runs inside a script or pipe, so it's script-friendly: `path=$(imagine 'a fox')`. Add `--open` to open anyway, or set `IMAGINE_OPEN=0` to never open.
 
 ## Models and quantization
 
@@ -282,6 +282,7 @@ imagine --help                                       # every option
 |---|---|---|
 | `IMAGINE_MODEL` | `x/flux2-klein` | default model |
 | `IMAGINE_OUTPUT_DIR` | `~/Pictures/imagine` | where images are saved |
+| `IMAGINE_OPEN` | `1` | set to `0` to never open images in Preview |
 | `IMAGINE_ENGINE_PORT` | `11435` | port for imagine-engine |
 | `IMAGINE_OLLAMA_HOST` | | always use this server instead (for example an Ollama that can make images) |
 | `IMAGINE_HOME` | `~/.imagine` | engine, logs and downloads |
