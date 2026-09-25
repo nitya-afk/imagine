@@ -17,6 +17,7 @@ export const ENGINE_SHA256 =
 export const DEFAULT_MODEL = process.env.IMAGINE_MODEL ?? 'x/flux2-klein';
 export const DEFAULT_SIZE = '1024x1024';
 export const DEFAULT_SERVE_PORT = 11436;
+export const DEFAULT_UI_PORT = 11437;
 
 export const IMAGINE_HOME = process.env.IMAGINE_HOME ?? join(homedir(), '.imagine');
 export const ENGINE_DIR = join(IMAGINE_HOME, 'engine', ENGINE_VERSION);

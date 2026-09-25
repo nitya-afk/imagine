@@ -1,6 +1,6 @@
 {
   "name": "imagine-local",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Local image generation on your Mac with Ollama image models: a CLI plus an OpenAI-compatible images API.",
   "type": "module",
   "bin": {
@@ -8,6 +8,7 @@
   },
   "files": [
     "dist",
+    "ui",
     "README.md",
     "LICENSE"
   ],

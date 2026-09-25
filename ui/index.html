@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>imagine</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23F28C28'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23000'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --black: #070707;
+    --panel: #0e0d0c;
+    --raise: #161412;
+    --line: rgba(255, 236, 214, 0.08);
+    --line-strong: rgba(255, 236, 214, 0.16);
+    --ink: #f4eee7;
+    --ink-2: rgba(244, 238, 231, 0.62);
+    --ink-3: rgba(244, 238, 231, 0.38);
+    --amber: #f28c28;
+    --amber-hot: #ffae5c;
+    --amber-dim: rgba(242, 140, 40, 0.14);
+    --ok: #9bd3a3;
+    --bad: #ff8a73;
+    --serif: "New York", ui-serif, "Iowan Old Style", Georgia, serif;
+    --sans: "Avenir Next", "Avenir", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+    --r: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--black);
+    color: var(--ink);
+    font: 15px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  /* Safelight glow and film grain: the room this happens in. */
+  body::before {
+    content: "";
+    position: fixed; inset: -20% auto auto -10%;
+    width: 70vw; height: 70vw;
+    background: radial-gradient(closest-side, rgba(242, 140, 40, 0.13), transparent 70%);
+    pointer-events: none; z-index: 0;
+  }
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+    opacity: 0.07; mix-blend-mode: overlay; pointer-events: none; z-index: 100;
+  }
+  .app {
+    position: relative; z-index: 1;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 400px minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas: "top top" "side stage" "strip strip";
+  }
+
+  /* ── Top bar ── */
+  header {
+    grid-area: top;
+    display: flex; align-items: center; gap: 18px;
+    padding: 18px 28px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .mark { font: italic 400 30px/1 var(--serif); letter-spacing: -0.02em; }
+  .mark b { color: var(--amber); font-weight: 400; }
+  .edge { font: 11px/1 var(--mono); color: var(--ink-3); letter-spacing: 0.16em; text-transform: uppercase; }
+  header .spacer { flex: 1; }
+  select, input, textarea, button { font: inherit; color: inherit; }
+  .model-pick {
+    display: flex; align-items: center; gap: 10px;
+    font: 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .model-pick select {
+    appearance: none; background: var(--raise); border: 1px solid var(--line-strong);
+    border-radius: 999px; padding: 7px 30px 7px 14px; font: 13px var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink);
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat;
+  }
+
+  /* ── Side panel ── */
+  aside {
+    grid-area: side;
+    border-right: 1px solid var(--line);
+    padding: 22px 28px 28px;
+    overflow-y: auto;
+  }
+  .tabs { display: flex; gap: 6px; margin-bottom: 26px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+  .tabs button {
+    flex: 1; border: 0; background: none; padding: 9px 0; border-radius: 999px; cursor: pointer;
+    font: 12px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2);
+    transition: background .25s, color .25s;
+  }
+  .tabs button[aria-selected="true"] { background: var(--amber); color: #1a0d00; }
+  h2 { font: italic 400 26px/1.15 var(--serif); margin: 0 0 18px; letter-spacing: -0.01em; }
+  h2 em { color: var(--amber); }
+  label.field { display: block; margin-bottom: 18px; }
+  .label { display: block; font: 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  textarea, input[type="text"], input[type="number"] {
+    width: 100%; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r);
+    padding: 13px 14px; outline: none; transition: border-color .2s, box-shadow .2s;
+  }
+  textarea { min-height: 112px; resize: vertical; font: 16px/1.45 var(--sans); }
+  textarea:focus, input:focus, select:focus { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-dim); }
+  ::placeholder { color: var(--ink-3); }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg button {
+    border: 1px solid var(--line-strong); background: var(--panel); border-radius: 10px; padding: 8px 12px; cursor: pointer;
+    font: 12px var(--mono); color: var(--ink-2); transition: all .18s;
+  }
+  .seg button:hover { color: var(--ink); border-color: var(--ink-3); }
+  .seg button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber-hot); background: var(--amber-dim); }
+  .seg small { display: block; font-size: 10px; color: var(--ink-3); }
+  .row { display: flex; gap: 12px; align-items: end; }
+  .row > * { flex: 1; }
+  .toggle { display: flex; align-items: center; gap: 12px; cursor: pointer; margin-bottom: 18px; user-select: none; }
+  .toggle input { appearance: none; width: 38px; height: 22px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line-strong); position: relative; cursor: pointer; flex: none; transition: background .2s; margin: 0; }
+  .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink-2); transition: transform .2s, background .2s; }
+  .toggle input:checked { background: var(--amber); border-color: var(--amber); }
+  .toggle input:checked::after { transform: translateX(16px); background: #1a0d00; }
+  .toggle span { font-size: 14px; }
+  .toggle small { display: block; color: var(--ink-3); font-size: 12px; }
+  .go {
+    width: 100%; border: 0; border-radius: var(--r); padding: 16px; cursor: pointer; margin-top: 4px;
+    background: var(--amber); color: #1a0d00; font: 600 15px var(--sans); letter-spacing: 0.01em;
+    box-shadow: 0 10px 40px -12px rgba(242, 140, 40, 0.6); transition: transform .15s, box-shadow .2s, background .2s;
+  }
+  .go:hover { background: var(--amber-hot); transform: translateY(-1px); }
+  .go:disabled { opacity: .45; cursor: progress; transform: none; }
+  .go kbd { font: 11px var(--mono); opacity: .6; margin-left: 8px; }
+  .drop {
+    position: relative; display: grid; place-items: center; min-height: 150px; margin-bottom: 18px;
+    border: 1.5px dashed var(--line-strong); border-radius: var(--r); background: var(--panel); cursor: pointer; overflow: hidden;
+    text-align: center; color: var(--ink-3); font-size: 13px; transition: border-color .2s, background .2s;
+  }
+  .drop.small { min-height: 84px; }
+  .drop:hover, .drop.over { border-color: var(--amber); background: var(--amber-dim); color: var(--ink-2); }
+  .drop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .drop .clear { position: absolute; top: 8px; right: 8px; z-index: 2; border: 0; border-radius: 999px; width: 26px; height: 26px; background: rgba(0,0,0,.7); color: var(--ink); cursor: pointer; }
+  .drop strong { display: block; color: var(--ink); font-weight: 500; font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 18px; }
+  .chips button { border: 1px solid var(--line-strong); background: none; color: var(--ink-2); border-radius: 999px; padding: 5px 11px; font-size: 12.5px; cursor: pointer; }
+  .chips button:hover { border-color: var(--amber); color: var(--amber-hot); }
+  details { margin-bottom: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+  summary { cursor: pointer; font: 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); list-style: none; }
+  summary::before { content: "+ "; color: var(--amber); }
+  details[open] summary::before { content: "− "; }
+  details > div { margin-top: 14px; }
+
+  /* ── Stage ── */
+  main { grid-area: stage; position: relative; overflow: hidden; display: grid; place-items: center; padding: 28px 36px; }
+  .empty { text-align: center; max-width: 440px; animation: rise .9s ease both; }
+  .empty h1 { font: italic 400 46px/1.05 var(--serif); margin: 0 0 14px; letter-spacing: -0.02em; }
+  .empty h1 em { color: var(--amber); }
+  .empty p { color: var(--ink-2); margin: 0; }
+  .developing { width: min(560px, 90%); animation: rise .5s ease both; }
+  .developing .edge { display: flex; justify-content: space-between; margin-bottom: 12px; }
+  .bar { height: 3px; background: var(--raise); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--amber), var(--amber-hot)); box-shadow: 0 0 18px var(--amber); transition: width .4s ease; }
+  .bar.indeterminate i { width: 30%; animation: slide 1.3s ease-in-out infinite; }
+  .status { margin-top: 16px; font: italic 20px/1.3 var(--serif); color: var(--ink-2); min-height: 1.3em; }
+  .enhanced { margin-top: 18px; padding: 14px 16px; border-left: 2px solid var(--amber); background: var(--panel); color: var(--ink-2); font-size: 14px; border-radius: 0 10px 10px 0; }
+  .enhanced b { display: block; font: 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--amber); margin-bottom: 6px; }
+  .plan { list-style: none; padding: 0; margin: 22px 0 0; counter-reset: s; }
+  .plan li { counter-increment: s; display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--ink-3); transition: color .3s; }
+  .plan li::before { content: counter(s, decimal-leading-zero); font: 12px var(--mono); color: var(--ink-3); width: 22px; }
+  .plan li.active { color: var(--ink); }
+  .plan li.active::before { color: var(--amber); }
+  .plan li.done { color: var(--ink-2); }
+  .plan li .tag { margin-left: auto; font: 11px var(--mono); }
+  .plan li .tag.ok { color: var(--ok); } .plan li .tag.bad { color: var(--bad); }
+  .plan li img { width: 42px; height: 42px; object-fit: cover; border-radius: 6px; }
+  .results .plan { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; }
+  .results .plan li { border: 0; padding: 0; font-size: 13px; gap: 8px; }
+  .results .plan li img { width: 28px; height: 28px; }
+  .results { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 16px; animation: rise .5s ease both; }
+  .frames { flex: 1; min-height: 0; display: grid; gap: 14px; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); }
+  .frame { position: relative; min-height: 0; display: grid; place-items: center; }
+  .frame img { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 30px 80px -30px rgba(0,0,0,.9), 0 0 0 1px var(--line); animation: develop 1.6s ease both; cursor: zoom-in; }
+  .meta { flex: none; display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+  .meta .prompt { flex: 1 1 320px; font: italic 17px/1.35 var(--serif); color: var(--ink-2); }
+  .meta .facts { font: 11px var(--mono); color: var(--ink-3); letter-spacing: .06em; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions button, .actions a {
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); text-decoration: none;
+    border-radius: 999px; padding: 8px 14px; font-size: 13px; cursor: pointer; transition: border-color .2s, color .2s;
+  }
+  .actions button:hover, .actions a:hover { border-color: var(--amber); color: var(--amber-hot); }
+  .actions .primary { background: var(--amber); color: #1a0d00; border-color: var(--amber); }
+  .actions .primary:hover { background: var(--amber-hot); color: #1a0d00; }
+  /* Before / after */
+  .compare { position: relative; max-width: 100%; max-height: 100%; display: inline-block; border-radius: 6px; overflow: hidden; box-shadow: 0 30px 80px -30px rgba(0,0,0,.9), 0 0 0 1px var(--line); --x: 50%; }
+  .compare img { display: block; max-width: 100%; max-height: calc(100vh - 420px); border-radius: 0; box-shadow: none; animation: none; cursor: ew-resize; }
+  .compare .after { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--x)); }
+  .compare .after img { width: 100%; height: 100%; object-fit: cover; }
+  .compare .handle { position: absolute; top: 0; bottom: 0; left: var(--x); width: 2px; background: var(--amber); box-shadow: 0 0 20px var(--amber); pointer-events: none; }
+  .compare .handle::after { content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 34px; height: 34px; border-radius: 50%; background: var(--amber); color: #1a0d00; display: grid; place-items: center; font-size: 15px; }
+  .compare input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
+  .compare .tagl, .compare .tagr { position: absolute; top: 12px; font: 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; background: rgba(0,0,0,.65); padding: 5px 8px; border-radius: 6px; pointer-events: none; }
+  .compare .tagl { left: 12px; } .compare .tagr { right: 12px; color: var(--amber-hot); }
+  .error { color: var(--bad); font: italic 18px var(--serif); text-align: center; max-width: 520px; }
+
+  /* ── Film strip gallery ── */
+  footer { grid-area: strip; border-top: 1px solid var(--line); background: #040404; padding: 0 28px; }
+  .strip-head { display: flex; justify-content: space-between; padding: 12px 0 0; }
+  .film {
+    display: flex; gap: 10px; overflow-x: auto; padding: 14px 4px 16px; scrollbar-width: thin;
+    background:
+      radial-gradient(circle, #040404 2.2px, transparent 2.6px) 0 3px / 18px 10px repeat-x,
+      radial-gradient(circle, #040404 2.2px, transparent 2.6px) 0 calc(100% - 3px) / 18px 10px repeat-x,
+      #1b1511;
+    border-radius: 4px; margin: 10px 0 16px;
+  }
+  .film button { flex: none; border: 0; padding: 0; background: none; cursor: pointer; border-radius: 3px; overflow: hidden; outline-offset: 2px; transition: transform .2s, filter .2s; filter: saturate(.85) brightness(.9); }
+  .film button:hover, .film button:focus-visible { transform: translateY(-3px); filter: none; }
+  .film img { height: 78px; display: block; }
+  .film .none { color: var(--ink-3); font: 12px var(--mono); padding: 28px 8px; }
+
+  .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: grid; place-items: center; cursor: zoom-out; padding: 30px; }
+  .lightbox img { max-width: 100%; max-height: 100%; border-radius: 4px; }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes develop { from { opacity: 0; filter: brightness(.2) sepia(1) saturate(3) hue-rotate(-20deg); } 55% { opacity: 1; } to { filter: none; } }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "side" "stage" "strip"; height: auto; }
+    header { padding: 14px 16px 12px; gap: 12px; }
+    header .edge { display: none; }
+    aside, footer { padding-left: 16px; padding-right: 16px; }
+    main { padding: 20px 16px; }
+    .compare img { max-height: 70vh; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    main { min-height: 70vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="mark">imagine<b>.</b></div>
+    <span class="edge">v__IMAGINE_VERSION__ · local · offline</span>
+    <span class="spacer"></span>
+    <label class="model-pick">Model <select id="model" aria-label="Model"></select></label>
+  </header>
+
+  <aside>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-create" aria-selected="true" aria-controls="create">Create</button>
+      <button role="tab" id="tab-edit" aria-selected="false" aria-controls="edit">Edit</button>
+    </div>
+
+    <form id="create">
+      <h2>Describe it, <em>and it develops.</em></h2>
+      <label class="field">
+        <span class="label">Prompt</span>
+        <textarea id="prompt" placeholder="A cat astronaut floating in a spaceship, golden hour through the window…" required></textarea>
+      </label>
+      <label class="toggle"><input type="checkbox" id="enhance"><span>Enhance with local AI<small>a chat model in Ollama writes the full prompt</small></span></label>
+      <div class="field">
+        <span class="label">Frame</span>
+        <div class="seg" id="sizes">
+          <button type="button" data-size="1024x1024" aria-pressed="true">Square<small>1024²</small></button>
+          <button type="button" data-size="832x1216" aria-pressed="false">Portrait<small>832×1216</small></button>
+          <button type="button" data-size="1216x832" aria-pressed="false">Landscape<small>1216×832</small></button>
+          <button type="button" data-size="1536x864" aria-pressed="false">Wide<small>1536×864</small></button>
+        </div>
+      </div>
+      <div class="row" style="margin: 18px 0">
+        <div>
+          <span class="label">Images</span>
+          <div class="seg" id="counts">
+            <button type="button" data-count="1" aria-pressed="true">1</button>
+            <button type="button" data-count="2" aria-pressed="false">2</button>
+            <button type="button" data-count="3" aria-pressed="false">3</button>
+            <button type="button" data-count="4" aria-pressed="false">4</button>
+          </div>
+        </div>
+        <label><span class="label">Seed</span><input type="number" id="seed" min="1" placeholder="random"></label>
+      </div>
+      <button class="go" type="submit">Generate <kbd>⌘↵</kbd></button>
+    </form>
+
+    <form id="edit" hidden>
+      <h2>Edit a photo <em>in plain words.</em></h2>
+      <div class="drop" id="photo-drop" tabindex="0" role="button" aria-label="Choose a photo to edit">
+        <div><strong>Drop a photo</strong>or click, or paste · HEIC, JPEG, PNG, WebP</div>
+      </div>
+      <input type="file" id="photo-file" accept="image/*,.heic,.heif" hidden>
+      <label class="field">
+        <span class="label">What should change?</span>
+        <textarea id="request" placeholder="Remove the lamp, add a cup of coffee next to the cat, and make it a sunny morning"></textarea>
+      </label>
+      <div class="chips" id="chips">
+        <button type="button" data-insert="remove ">Remove…</button>
+        <button type="button" data-insert="add ">Add…</button>
+        <button type="button" data-insert="change the background to ">Background…</button>
+        <button type="button" data-insert="change the face to ">Face…</button>
+        <button type="button" data-insert="turn it into ">Style…</button>
+      </div>
+      <div class="field">
+        <span class="label">Extend the frame</span>
+        <div class="seg" id="extends">
+          <button type="button" data-extend="" aria-pressed="true">Keep</button>
+          <button type="button" data-extend="16:9" aria-pressed="false">16:9</button>
+          <button type="button" data-extend="4:3" aria-pressed="false">4:3</button>
+          <button type="button" data-extend="1:1" aria-pressed="false">1:1</button>
+          <button type="button" data-extend="9:16" aria-pressed="false">9:16</button>
+          <button type="button" data-extend="wider" aria-pressed="false">Wider</button>
+        </div>
+      </div>
+      <details>
+        <summary>Swap in a face</summary>
+        <div>
+          <div class="drop small" id="face-drop" tabindex="0" role="button" aria-label="Choose a face photo">
+            <div><strong>Face photo</strong>its face goes onto the person</div>
+          </div>
+          <input type="file" id="face-file" accept="image/*,.heic,.heif" hidden>
+        </div>
+      </details>
+      <label class="toggle"><input type="checkbox" id="check"><span>Check each step<small>a vision model looks, and retries edits that didn't take</small></span></label>
+      <button class="go" type="submit">Apply edits <kbd>⌘↵</kbd></button>
+    </form>
+  </aside>
+
+  <main id="stage">
+    <div class="empty">
+      <div class="edge" style="margin-bottom: 18px">darkroom · ready</div>
+      <h1>Every image starts <em>in the dark.</em></h1>
+      <p>Describe one on the left, or switch to Edit and drop in a photo. Everything runs on this Mac.</p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="strip-head"><span class="edge">Contact sheet</span><span class="edge" id="count"></span></div>
+    <div class="film" id="film"><span class="none">Your images will appear here.</span></div>
+  </footer>
+</div>
+<div class="lightbox" id="lightbox" hidden><img alt=""></div>
+
+<script>
+const TOKEN = '__IMAGINE_TOKEN__';
+const DEFAULT_MODEL = '__IMAGINE_MODEL__';
+const $ = (id) => document.getElementById(id);
+const stage = $('stage');
+const state = { size: '1024x1024', count: 1, extend: '', photo: null, face: null, busy: false, gallery: [] };
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const api = (path, init = {}) => fetch(path, { ...init, headers: { ...(init.headers || {}), 'x-imagine-token': TOKEN } });
+
+/** Read a newline-delimited JSON stream, calling onEvent for each line as it arrives. */
+async function stream(path, init, onEvent) {
+  const res = await api(path, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `The request failed (${res.status}).`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let n;
+    while ((n = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, n).trim();
+      buffer = buffer.slice(n + 1);
+      if (line) onEvent(JSON.parse(line));
+    }
+  }
+}
+
+// ── Tabs and segmented controls ──
+function selectTab(name) {
+  for (const t of ['create', 'edit']) {
+    $('tab-' + t).setAttribute('aria-selected', String(t === name));
+    $(t).hidden = t !== name;
+  }
+}
+$('tab-create').onclick = () => selectTab('create');
+$('tab-edit').onclick = () => selectTab('edit');
+function segmented(id, key, attr) {
+  $(id).addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    for (const other of $(id).querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === b));
+    state[key] = attr === 'count' ? Number(b.dataset.count) : b.dataset[attr];
+  });
+}
+segmented('sizes', 'size', 'size');
+segmented('counts', 'count', 'count');
+segmented('extends', 'extend', 'extend');
+$('chips').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const t = $('request');
+  const sep = t.value.trim() && !/[,.]\s*$/.test(t.value) ? ', ' : (t.value && !t.value.endsWith(' ') ? ' ' : '');
+  t.value += sep + b.dataset.insert;
+  t.focus();
+  t.setSelectionRange(t.value.length, t.value.length);
+});
+
+// ── Photo pickers (click, drag and drop, paste) ──
+function picker(dropId, inputId, key, emptyHtml) {
+  const drop = $(dropId), input = $(inputId);
+  const show = () => {
+    const item = state[key];
+    if (!item) { drop.innerHTML = emptyHtml; return; }
+    drop.innerHTML = `<img alt="" src="${item.url}"><button type="button" class="clear" aria-label="Remove">×</button>`;
+    const img = drop.querySelector('img');
+    // Browsers can't preview HEIC; imagine still converts it, so show the name instead.
+    img.onerror = () => { img.remove(); drop.insertAdjacentHTML('afterbegin', `<div><strong>${esc(item.name)}</strong>ready to edit</div>`); };
+    drop.querySelector('.clear').onclick = (e) => { e.stopPropagation(); state[key] = null; show(); };
+  };
+  const take = (file) => { if (file) { state[key] = { file, name: file.name, url: URL.createObjectURL(file) }; show(); } };
+  drop.onclick = () => input.click();
+  drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } };
+  input.onchange = () => take(input.files[0]);
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files[0]); };
+  return { show, take };
+}
+const photoPicker = picker('photo-drop', 'photo-file', 'photo', $('photo-drop').innerHTML);
+const facePicker = picker('face-drop', 'face-file', 'face', $('face-drop').innerHTML);
+window.addEventListener('paste', (e) => {
+  const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
+  if (!file) return;
+  selectTab('edit');
+  photoPicker.take(file);
+});
+function useGalleryPhoto(image) {
+  state.photo = { from: image.name, name: image.name, url: image.url };
+  photoPicker.show();
+  selectTab('edit');
+  $('request').focus();
+}
+
+// ── Stage views ──
+function showDeveloping(title) {
+  stage.innerHTML = `
+    <div class="developing">
+      <div class="edge"><span>${esc(title)}</span><span id="pct"></span></div>
+      <div class="bar indeterminate" id="bar"><i></i></div>
+      <div class="status" id="status">Loading the model…</div>
+      <div id="extra"></div>
+    </div>`;
+}
+function onProgress(ev) {
+  const bar = $('bar');
+  if (!bar) return;
+  bar.classList.remove('indeterminate');
+  const pct = ev.total ? Math.round((ev.completed / ev.total) * 100) : 0;
+  bar.querySelector('i').style.width = pct + '%';
+  $('pct').textContent = ev.total ? `${ev.completed}/${ev.total}` : '';
+  $('status').textContent = `${ev.label}…`;
+}
+function onStatus(message) {
+  const s = $('status');
+  // "Step 1/2: custom" reads better as the step itself, in the words of the plan.
+  const step = /^Step (\d+)\/(\d+)[^(]*(\(retry \d+\))?/.exec(message);
+  const planned = step && document.querySelectorAll('#plan li span:not(.tag)')[Number(step[1]) - 1];
+  if (s) s.textContent = planned ? `Step ${step[1]} of ${step[2]} · ${planned.textContent}${step[3] ? ` ${step[3]}` : ''}…` : message;
+  const bar = $('bar');
+  if (bar && /^(Planning|Writing|Checking|Waiting|Loading|Image|Step)/.test(message)) bar.classList.add('indeterminate');
+}
+function showError(message) {
+  stage.innerHTML = `<div class="error">${esc(message)}</div>`;
+}
+function facts(img) {
+  return [img.width && `${img.width}×${img.height}`, img.seed && `seed ${img.seed}`, img.model].filter(Boolean).join('  ·  ');
+}
+function actionsFor(img) {
+  return `
+    <a href="${img.url}" download="${esc(img.name)}">Download</a>
+    <button data-act="edit">Edit this</button>
+    ${img.edit ? '' : '<button data-act="vary">Vary</button>'}
+    <button data-act="copy">Copy prompt</button>`;
+}
+function wireActions(root, img) {
+  root.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => {
+    if (b.dataset.act === 'edit') useGalleryPhoto(img);
+    if (b.dataset.act === 'copy') { navigator.clipboard.writeText(img.prompt || ''); b.textContent = 'Copied'; }
+    if (b.dataset.act === 'vary') {
+      selectTab('create');
+      $('prompt').value = img.idea || img.prompt || '';
+      runGenerate({ prompt: img.prompt, size: img.width && `${img.width}x${img.height}`, count: 1, enhance: false });
+    }
+  });
+}
+function showImages(images, heading) {
+  const last = images[images.length - 1];
+  stage.innerHTML = `
+    <div class="results">
+      <div class="frames" style="--cols:${Math.min(images.length, 2)}">
+        ${images.map((img, i) => `<div class="frame"><img alt="${esc(img.prompt)}" src="${img.url}" data-i="${i}"></div>`).join('')}
+      </div>
+      <div class="meta">
+        <div class="prompt">${esc(heading || last.prompt || '')}</div>
+        <div class="facts">${esc(facts(last))}</div>
+        <div class="actions">${actionsFor(last)}</div>
+      </div>
+    </div>`;
+  stage.querySelectorAll('.frame img').forEach((el) => el.onclick = () => openLightbox(el.src));
+  wireActions(stage, last);
+}
+function showCompare(beforeUrl, img, planHtml, heading) {
+  stage.innerHTML = `
+    <div class="results">
+      <div class="frames"><div class="frame" id="cmp-frame"></div></div>
+      <div class="meta">
+        <div class="prompt">${esc(heading || img.prompt || '')}</div>
+        <div class="facts">${esc(facts(img))}</div>
+        <div class="actions"><button class="primary" data-act="keep">Keep editing</button>${actionsFor(img).replace('<button data-act="edit">Edit this</button>', '')}</div>
+      </div>
+      ${planHtml || ''}
+    </div>`;
+  const frame = $('cmp-frame');
+  const before = new Image(), after = new Image();
+  let loaded = 0;
+  const ready = () => {
+    if (++loaded < 2) return;
+    // Extending changes the shape; then side by side reads better than a slider.
+    const same = Math.abs(before.naturalWidth / before.naturalHeight - after.naturalWidth / after.naturalHeight) < 0.02;
+    if (!same) {
+      frame.parentElement.style.setProperty('--cols', 2);
+      frame.outerHTML = `<div class="frame"><img alt="Before" src="${beforeUrl}"></div><div class="frame"><img alt="After" src="${img.url}"></div>`;
+      stage.querySelectorAll('.frame img').forEach((el) => el.onclick = () => openLightbox(el.src));
+      return;
+    }
+    frame.innerHTML = `
+      <div class="compare">
+        <img alt="Before" src="${beforeUrl}">
+        <div class="after"><img alt="After" src="${img.url}"></div>
+        <div class="handle"></div>
+        <span class="tagl">Before</span><span class="tagr">After</span>
+        <input type="range" min="0" max="100" value="50" aria-label="Compare before and after">
+      </div>`;
+    const cmp = frame.querySelector('.compare');
+    cmp.querySelector('input').oninput = (e) => cmp.style.setProperty('--x', e.target.value + '%');
+  };
+  before.onload = after.onload = ready;
+  before.onerror = () => { before.src = img.url; };
+  before.src = beforeUrl;
+  after.src = img.url;
+  stage.querySelector('[data-act="keep"]').onclick = () => useGalleryPhoto(img);
+  wireActions(stage, img);
+}
+function openLightbox(src) {
+  const lb = $('lightbox');
+  lb.querySelector('img').src = src;
+  lb.hidden = false;
+}
+$('lightbox').onclick = () => { $('lightbox').hidden = true; };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('lightbox').hidden = true; });
+
+// ── Jobs ──
+function setBusy(busy) {
+  state.busy = busy;
+  document.querySelectorAll('.go').forEach((b) => { b.disabled = busy; });
+}
+async function runGenerate(body) {
+  if (state.busy) return;
+  setBusy(true);
+  showDeveloping(body.count > 1 ? `Developing ${body.count} images` : 'Developing');
+  const images = [];
+  let enhanced = '';
+  try {
+    await stream('/api/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...body, model: $('model').value }),
+    }, (ev) => {
+      if (ev.type === 'status') onStatus(ev.message);
+      if (ev.type === 'progress') onProgress(ev);
+      if (ev.type === 'prompt') {
+        enhanced = ev.prompt;
+        $('extra').innerHTML = `<div class="enhanced"><b>Enhanced prompt</b>${esc(ev.prompt)}</div>`;
+      }
+      if (ev.type === 'image') { images.push(ev.image); addToFilm(ev.image); }
+      if (ev.type === 'error') throw new Error(ev.message);
+    });
+    if (images.length) showImages(images, enhanced ? enhanced : undefined);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    setBusy(false);
+  }
+}
+$('create').onsubmit = (e) => {
+  e.preventDefault();
+  const prompt = $('prompt').value.trim();
+  if (!prompt) return $('prompt').focus();
+  runGenerate({ prompt, size: state.size, count: state.count, seed: $('seed').value || undefined, enhance: $('enhance').checked });
+};
+
+$('edit').onsubmit = async (e) => {
+  e.preventDefault();
+  if (state.busy) return;
+  if (!state.photo) return $('photo-drop').focus();
+  const request = $('request').value.trim();
+  if (!request && !state.extend && !state.face) return $('request').focus();
+  const form = new FormData();
+  if (state.photo.file) form.append('photo', state.photo.file);
+  else form.append('from', state.photo.from);
+  if (state.face?.file) form.append('face', state.face.file);
+  if (request) form.append('request', request);
+  if (state.extend) form.append('extend', state.extend);
+  form.append('check', String($('check').checked));
+  form.append('model', $('model').value);
+  const beforeUrl = state.photo.url;
+  setBusy(true);
+  showDeveloping('Editing');
+  let planHtml = '';
+  try {
+    let result = null;
+    await stream('/api/edit', { method: 'POST', body: form }, (ev) => {
+      if (ev.type === 'status') onStatus(ev.message);
+      if (ev.type === 'progress') onProgress(ev);
+      if (ev.type === 'plan') {
+        $('extra').innerHTML = `<ol class="plan" id="plan">${ev.steps.map((s, i) => `<li class="${i === 0 ? 'active' : ''}"><span>${esc(s)}</span><span class="tag"></span></li>`).join('')}</ol>`;
+      }
+      if (ev.type === 'step') {
+        const items = document.querySelectorAll('#plan li');
+        const li = items[ev.index];
+        if (li) {
+          li.className = 'done';
+          const tag = li.querySelector('.tag');
+          tag.textContent = ev.checked === undefined ? `${ev.seconds}s` : ev.checked ? `✓ checked · ${ev.seconds}s` : `⚠ unsure · ${ev.seconds}s`;
+          tag.classList.add(ev.checked === false ? 'bad' : 'ok');
+          li.insertAdjacentHTML('afterbegin', `<img alt="" src="${ev.preview}">`);
+          if (items[ev.index + 1]) items[ev.index + 1].className = 'active';
+        }
+        planHtml = document.getElementById('plan')?.outerHTML || '';
+      }
+      if (ev.type === 'image') { result = ev.image; addToFilm(ev.image); }
+      if (ev.type === 'error') throw new Error(ev.message);
+    });
+    const heading = [request, state.extend && `extend to ${state.extend}`, state.face && 'swap in the face'].filter(Boolean).join(', ');
+    if (result) showCompare(beforeUrl, result, planHtml, heading);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    setBusy(false);
+  }
+};
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    const form = !$('create').hidden ? $('create') : $('edit');
+    form.requestSubmit();
+  }
+});
+
+// ── Contact sheet ──
+function filmItem(img) {
+  const b = document.createElement('button');
+  b.title = img.prompt || img.name;
+  b.innerHTML = `<img alt="${esc(img.prompt)}" src="${img.url}" loading="lazy">`;
+  b.onclick = () => showImages([img]);
+  return b;
+}
+function addToFilm(img) {
+  state.gallery.unshift(img);
+  const film = $('film');
+  film.querySelector('.none')?.remove();
+  film.prepend(filmItem(img));
+  $('count').textContent = `${state.gallery.length} frames`;
+}
+async function loadGallery() {
+  const res = await api('/api/gallery');
+  if (!res.ok) return;
+  const { images } = await res.json();
+  state.gallery = images;
+  if (!images.length) return;
+  $('film').innerHTML = '';
+  images.forEach((img) => $('film').append(filmItem(img)));
+  $('count').textContent = `${images.length} frames`;
+}
+async function loadModels() {
+  const res = await api('/api/models');
+  const sel = $('model');
+  const models = res.ok ? (await res.json()).models : [];
+  const list = models.length ? models : [DEFAULT_MODEL];
+  const canonical = (n) => n.includes(':') ? n : n + ':latest';
+  sel.innerHTML = list.map((m) => `<option value="${esc(m)}" ${canonical(m) === canonical(DEFAULT_MODEL) ? 'selected' : ''}>${esc(m.replace(/:latest$/, ''))}</option>`).join('');
+}
+loadModels();
+loadGallery();
+</script>
+</body>
+</html>

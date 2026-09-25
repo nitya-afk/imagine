@@ -21,6 +21,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 ## What it can do
 
 - **Generate images from text** with FLUX.2 Klein, fully offline, on any Apple silicon Mac.
+- **Use it in your browser** (`imagine ui`): create, upload a photo and edit it, compare before and after, and keep editing.
 - **Edit photos like an editor**: remove or add things, change the background, change or swap faces, restyle, and extend the scene. Describe it in plain English and a local model plans the steps and checks each result.
 - **Write better prompts for you** (`--enhance`), using a local chat model.
 - **Reproduce any image**: every PNG remembers its prompt, seed and model (`imagine again`).
@@ -37,6 +38,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 - [Quick start](#quick-start)
 - [Generate and edit](#generate-and-edit)
 - [Edit photos](#edit-photos)
+- [Use it in your browser](#use-it-in-your-browser)
 - [Better prompts, reproducible images](#better-prompts-reproducible-images)
 - [Models and quantization](#models-and-quantization)
 - [Benchmark your Mac](#benchmark-your-mac)
@@ -153,6 +155,25 @@ imagine edit photo.heic --swap-face face.jpg --background "a neon-lit city stree
 - **Planning** uses the same local chat model as `--enhance`. Without one, the whole request runs as a single edit.
 
 Every step regenerates the picture, so very fine details can drift a little over long chains. Two to four steps work best.
+
+## Use it in your browser
+
+Prefer clicking to typing? `imagine ui` opens a small app in your browser:
+
+```bash
+imagine ui
+```
+
+![imagine ui: two images from one prompt, and the contact sheet of recent images](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/ui-create.jpg)
+
+- **Create**: write a prompt, pick a frame (square, portrait, landscape, wide), make up to four at once, and optionally let a local model enhance the prompt.
+- **Edit**: drop in a photo (or paste one, or pick one you made), say what should change, and watch each planned step run. Quick buttons start a remove, add, background, face or style edit. You can also extend the frame to 16:9, 4:3, 1:1 or 9:16, or swap in a face from a second photo.
+- **Before and after**: drag the slider to compare, then **Keep editing** to carry on from the result.
+- **Contact sheet**: your recent images, with the prompt, seed and model each was made with. Download one, vary it, or edit it.
+
+![imagine ui: before and after of a background change](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/ui-edit.jpg)
+
+It runs on this Mac only. It listens on `127.0.0.1:11437` (change it with `--port`), and every request needs a token that's baked into the page when it opens, so other websites can't use it. Images are saved to the same folder as the command line's. Use `--no-open` to start it without opening the browser. Jobs run one at a time; a second one waits its turn.
 
 ## Better prompts, reproducible images
 
@@ -416,6 +437,7 @@ imagine bench                                        # measure this Mac's speed
 imagine models                                       # models, sizes, and what fits this Mac
 imagine pull [model]                                 # download a model (default x/flux2-klein)
 imagine create <name> --from <src> [--quantize fmt] [--lora src[:w]]   # import, quantize, add LoRAs
+imagine ui [--port 11437] [--no-open]           # the browser app: create and edit with uploads
 imagine serve [--port 11436] [--bind …] [--api-key …] [--cors]   # OpenAI-compatible API
 imagine mcp                                          # MCP server for AI assistants
 imagine status                                       # which engine is running, where files go

@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { totalmem } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { parseArgs } from 'node:util';
-import { defaultDeps, resolveImageHost, withImageBackend } from './backend.ts';
+import { defaultDeps, resolveImageHost } from './backend.ts';
 import { BENCH_PROMPT, BENCH_RUNS, formatBench, machine } from './bench.ts';
 import {
   DEFAULT_MODEL,
   DEFAULT_SERVE_PORT,
+  DEFAULT_UI_PORT,
   DEFAULT_SIZE,
   ENGINE_VERSION,
   HF_CACHE_DIR,
@@ -21,35 +22,20 @@ import {
   QUANTIZE_FORMATS,
 } from './config.ts';
 import { createModel, parseQuantize, resolveLora, resolveSource } from './create.ts';
-import {
-  checkEdit,
-  expectationFor,
-  extendSize,
-  planEdits,
-  pickVisionModel,
-  promptFor,
-  stepsFromFlags,
-  type EditStep,
-} from './edit.ts';
-import { enhancePrompt, pickChatModel } from './enhance.ts';
+import { describeStep, runEdit, stepsFromFlags } from './edit.ts';
+import { enhanceIdea } from './enhance.ts';
+import { imageGenerator } from './generator.ts';
 import { normalizeHost } from './host.ts';
 import { prepareImage } from './images.ts';
 import { mergeLoras, parseLoraArg } from './lora.ts';
 import { runMcpServer } from './mcp.ts';
 import { canonicalModel, formatBytes, memoryFit, normalizeModelName } from './models.ts';
-import {
-  generateImage,
-  getVersion,
-  listModels,
-  OllamaError,
-  pullModel,
-  type GenerateParams,
-  type StepProgress,
-} from './ollama.ts';
+import { getVersion, listModels, pullModel } from './ollama.ts';
 import { imageFileName, MAX_SEED, parseIntInRange, parseSize, randomSeed } from './options.ts';
-import { pngSize, readMetadata, withMetadata } from './png.ts';
+import { readMetadata } from './png.ts';
 import { engineHost, isEngineInstalled, stopEngine, type RuntimeEvents } from './runtime.ts';
 import { createImageServer } from './server.ts';
+import { createUiServer } from './ui.ts';
 
 const VERSION = (
   JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
@@ -64,6 +50,7 @@ Usage
   imagine "a cat astronaut" --enhance                  let a local chat model write the full prompt
   imagine again image.png [--vary]                     recreate an image from its saved settings
   imagine bench                                        measure this Mac's speed, in a shareable format
+  imagine ui                                           open the app in your browser: create and edit with uploads
   imagine serve                                        OpenAI-compatible API on http://127.0.0.1:${DEFAULT_SERVE_PORT}/v1
   imagine mcp                                          MCP server over stdio, for AI apps and agents
   imagine models                                       image models, their sizes, and what fits this Mac
@@ -98,11 +85,12 @@ Create options
       --lora <src>[:w]   bake a LoRA in: a .safetensors file or owner/name on Hugging Face, weight w
                          (default 1); repeat to stack LoRAs
 
-Serve options
-  -p, --port <n>         port (default ${DEFAULT_SERVE_PORT})
+Serve and ui options
+  -p, --port <n>         port (default ${DEFAULT_SERVE_PORT} for serve, ${DEFAULT_UI_PORT} for ui)
       --bind <address>   address to listen on (default 127.0.0.1)
       --api-key <key>    require "Authorization: Bearer <key>" (also IMAGINE_API_KEY)
       --cors             allow browser apps on other origins to call the API
+      --no-open          with \`ui\`: don't open the browser
 `;
 
 type Values = ReturnType<typeof parse>['values'];
@@ -161,6 +149,7 @@ async function main(argv: string[]): Promise<number> {
   const [first, second] = positionals;
   const only = positionals.length === 1;
   if (first === 'serve' && only) return serve(values);
+  if (first === 'ui' && only) return ui(values);
   if (first === 'mcp' && only) return mcp();
   if (first === 'models' && only) return models();
   if (first === 'status' && only) return status();
@@ -172,44 +161,6 @@ async function main(argv: string[]): Promise<number> {
   if (first === 'edit' && second) return edit(second, positionals.slice(2).join(' '), values);
 
   return generate(positionals.join(' '), values);
-}
-
-/**
- * Every front end (CLI, API, MCP) generates through this: edits go to the engine, the rest may use
- * your Ollama, and each PNG records how it was made.
- */
-function imageGenerator(events: RuntimeEvents) {
-  return async (params: GenerateParams, onProgress?: (p: StepProgress) => void, idea?: string): Promise<Buffer> => {
-    const images = params.images?.length
-      ? await Promise.all(
-          params.images.map(async (b64, i) =>
-            (await prepareImage(Buffer.from(b64, 'base64'), `input image ${i + 1}`)).toString('base64'),
-          ),
-        )
-      : undefined;
-    const request = { ...params, images, model: normalizeModelName(params.model) };
-    try {
-      const png = await withImageBackend((host) => generateImage(host, request, onProgress), defaultDeps(events), {
-        editing: Boolean(request.images?.length),
-      });
-      const size = pngSize(png) ?? { width: request.width ?? 0, height: request.height ?? 0 };
-      return withMetadata(png, {
-        prompt: request.prompt,
-        idea,
-        model: request.model,
-        seed: request.seed,
-        ...size,
-        steps: request.steps,
-        edit: Boolean(request.images?.length),
-        generator: `imagine ${VERSION}`,
-      });
-    } catch (err) {
-      if (err instanceof OllamaError && /not found/i.test(err.message)) {
-        throw new Error(`${err.message}. Download it with: imagine pull ${request.model}`);
-      }
-      throw err;
-    }
-  };
 }
 
 // ── generate ────────────────────────────────────────────────────────────────
@@ -231,7 +182,7 @@ async function generate(idea: string, values: Values, recordedIdea?: string): Pr
   const ui = createProgress();
   const prompt = values.enhance ? await enhance(idea, ui) : idea;
   const originalIdea = values.enhance ? idea : recordedIdea;
-  const run = imageGenerator(runtimeEvents(ui));
+  const run = imageGenerator(runtimeEvents(ui), VERSION);
   const saved: string[] = [];
   for (let i = 0; i < count; i++) {
     const seed = firstSeed !== undefined ? Math.min(firstSeed + i, MAX_SEED) : randomSeed();
@@ -273,18 +224,9 @@ function outputPath(out: string | undefined, prompt: string, seed: number, index
   return join(dir, imageFileName(dir, prompt, seed));
 }
 
-/** Rewrite a short idea with a chat model from the user's own Ollama (the engine only runs image models). */
+/** Enhance on the terminal: show which model is writing, then the prompt it wrote. */
 async function enhance(idea: string, ui: Progress): Promise<string> {
-  const host = normalizeHost(process.env.OLLAMA_HOST);
-  if (!(await getVersion(host))) {
-    throw new Error(`--enhance uses a chat model in Ollama, but Ollama isn't running at ${host}. Start Ollama, or leave out --enhance.`);
-  }
-  const model = process.env.IMAGINE_ENHANCE_MODEL ?? pickChatModel(await listModels(host));
-  if (!model) {
-    throw new Error('--enhance needs a chat model in Ollama. Install one, for example: ollama pull gemma4:12b');
-  }
-  ui.status(`Writing the prompt with ${model}…`);
-  const prompt = await enhancePrompt(host, model, idea);
+  const prompt = await enhanceIdea(idea, (message) => ui.status(message));
   ui.clear();
   console.error(`Prompt: ${prompt}`);
   return prompt;
@@ -295,7 +237,7 @@ async function edit(file: string, request: string, values: Values): Promise<numb
   if (!existsSync(file)) throw new Error(`Photo not found: ${file}`);
   const swapFace = values['swap-face'];
   if (swapFace && !existsSync(swapFace)) throw new Error(`Face photo not found: ${swapFace}`);
-  const flagSteps = stepsFromFlags({
+  const steps = stepsFromFlags({
     remove: values.remove,
     add: values.add,
     face: values.face,
@@ -305,76 +247,42 @@ async function edit(file: string, request: string, values: Values): Promise<numb
     extend: values.extend,
   });
   const ui = createProgress();
-  const chatHost = normalizeHost(process.env.OLLAMA_HOST);
-  const chatModels = request || values.check ? ((await getVersion(chatHost)) ? await listModels(chatHost) : []) : [];
-
-  let planned: EditStep[] = [];
-  if (request) {
-    const planner = process.env.IMAGINE_ENHANCE_MODEL ?? pickChatModel(chatModels);
-    if (planner) {
-      ui.status(`Planning with ${planner}…`);
-      planned = await planEdits(chatHost, planner, request, Boolean(swapFace)).catch(() => [{ op: 'custom' as const, value: request }]);
-      ui.clear();
-    } else {
-      planned = [{ op: 'custom', value: request }];
-    }
-  }
-  const steps = [...planned, ...flagSteps];
-  if (steps.length === 0) {
-    throw new Error('Say what to change: a request in words, or flags like --remove "the lamp" or --background "a beach".');
-  }
-  const vision = values.check ? pickVisionModel(chatModels) : null;
-  if (values.check && !vision) {
-    throw new Error('--check needs a chat model that can see images in Ollama, for example: ollama pull gemma4:12b');
-  }
-
-  console.error('Plan:');
-  steps.forEach((s, i) => console.error(`  ${i + 1}. ${s.op === 'custom' ? s.value : `${s.op} ${s.op === 'swap-face' ? 'from ' + s.value : s.value}`}`));
-
-  const model = normalizeModelName(values.model ?? DEFAULT_MODEL);
-  const run = imageGenerator(runtimeEvents(ui));
-  const baseSeed = values.seed ? parseIntInRange(values.seed, '--seed', 1, MAX_SEED) : undefined;
-  let current = await prepareImage(readFileSync(file), 'the photo', { png: true });
-  const face = swapFace ? await prepareImage(readFileSync(swapFace), 'the face photo') : undefined;
   const label = request || steps.map((s) => `${s.op} ${s.value}`).join(', ');
   const outDir = values.out && extname(values.out).toLowerCase() !== '.png' ? resolve(values.out) : OUTPUT_DIR;
-  let lastSeed = 0;
 
-  for (const [i, step] of steps.entries()) {
-    const size = step.op === 'extend' ? extendSize(current.readUInt32BE(16), current.readUInt32BE(20), step.value) : undefined;
-    const images = [current, ...(step.op === 'swap-face' && face ? [face] : [])].map((b) => b.toString('base64'));
-    const expectation = vision ? expectationFor(step) : null;
-    const tries = expectation ? 3 : 1;
-    const start = performance.now();
-    let verdict = '';
-    for (let attempt = 0; attempt < tries; attempt++) {
-      lastSeed = baseSeed !== undefined ? Math.min(baseSeed + i + attempt * 100, MAX_SEED) : randomSeed();
-      const label = `Step ${i + 1}/${steps.length}: ${step.op}${attempt ? ` (retry ${attempt})` : ''}`;
-      ui.status(label);
-      current = await run(
-        { model, prompt: promptFor(step), width: size?.width, height: size?.height, seed: lastSeed, images },
-        (p) => ui.bar(label, p.completed, p.total),
-      );
-      if (!expectation) break;
-      ui.status(`Checking step ${i + 1} with ${vision}…`);
-      if (await checkEdit(chatHost, vision!, current, expectation)) {
-        verdict = ' ✓ checked';
-        break;
-      }
-      verdict = attempt === tries - 1 ? ' ⚠ the check still failed; kept the last try' : '';
-    }
-    ui.clear();
-    console.error(`  ${i + 1}. done in ${((performance.now() - start) / 1000).toFixed(0)} s${verdict}`);
-    if (values['keep-steps'] && i < steps.length - 1) {
-      mkdirSync(outDir, { recursive: true });
-      const stepFile = join(outDir, imageFileName(outDir, `${label} step ${i + 1}`, lastSeed));
-      await writeFile(stepFile, current);
-      console.log(stepFile);
-    }
-  }
+  const result = await runEdit({
+    photo: await prepareImage(readFileSync(file), 'the photo', { png: true }),
+    face: swapFace ? await prepareImage(readFileSync(swapFace), 'the face photo') : undefined,
+    request: request || undefined,
+    steps,
+    check: values.check,
+    seed: values.seed ? parseIntInRange(values.seed, '--seed', 1, MAX_SEED) : undefined,
+    model: normalizeModelName(values.model ?? DEFAULT_MODEL),
+    generate: imageGenerator(runtimeEvents(ui), VERSION),
+    events: {
+      status: (message) => ui.status(message),
+      progress: (text, done, total) => ui.bar(text, done, total),
+      plan: (planned) => {
+        ui.clear();
+        console.error('Plan:');
+        planned.forEach((step, i) => console.error(`  ${i + 1}. ${describeStep(step)}`));
+      },
+      stepDone: (step) => {
+        ui.clear();
+        const verdict = step.checked === undefined ? '' : step.checked ? ' ✓ checked' : ' ⚠ the check still failed; kept the last try';
+        console.error(`  ${step.index + 1}. done in ${step.seconds.toFixed(0)} s${verdict}`);
+        if (values['keep-steps'] && step.index < step.total - 1) {
+          mkdirSync(outDir, { recursive: true });
+          const stepFile = join(outDir, imageFileName(outDir, `${label} step ${step.index + 1}`, step.seed));
+          writeFileSync(stepFile, step.image);
+          console.log(stepFile);
+        }
+      },
+    },
+  });
 
-  const final = outputPath(values.out, label, lastSeed, 0, 1);
-  await writeFile(final, current);
+  const final = outputPath(values.out, label, result.seed, 0, 1);
+  await writeFile(final, result.image);
   console.log(final);
   if (shouldOpen(values)) execFile('open', [final]);
   return 0;
@@ -406,7 +314,7 @@ async function again(file: string, values: Values): Promise<number> {
 async function bench(values: Values): Promise<number> {
   const model = normalizeModelName(values.model ?? DEFAULT_MODEL);
   const ui = createProgress();
-  const run = imageGenerator(runtimeEvents(ui));
+  const run = imageGenerator(runtimeEvents(ui), VERSION);
   const times: number[] = [];
   for (const [i, r] of BENCH_RUNS.entries()) {
     const label = `Benchmark ${i + 1}/${BENCH_RUNS.length} (${r.size}×${r.size}${r.warmup ? ', loading the model' : ''})`;
@@ -448,7 +356,7 @@ async function serve(values: Values): Promise<number> {
 
   const log = (line: string) => console.error(`${new Date().toLocaleTimeString()}  ${line}`);
   const events: RuntimeEvents = { onStatus: log };
-  const generateWith = imageGenerator(events);
+  const generateWith = imageGenerator(events, VERSION);
   const server = createImageServer({
     defaultModel: DEFAULT_MODEL,
     outputDir: OUTPUT_DIR,
@@ -479,11 +387,44 @@ Press Ctrl+C to stop.`);
   return 0;
 }
 
+/** The browser app. It stays on this Mac: 127.0.0.1 only, with a per-session token in the page. */
+async function ui(values: Values): Promise<number> {
+  const port = values.port ? parseIntInRange(values.port, '--port', 1, 65535) : DEFAULT_UI_PORT;
+  const log = (line: string) => console.error(`${new Date().toLocaleTimeString()}  ${line}`);
+  const events: RuntimeEvents = { onStatus: log };
+  const { server } = createUiServer({
+    version: VERSION,
+    outputDir: OUTPUT_DIR,
+    defaultModel: DEFAULT_MODEL,
+    generate: imageGenerator(events, VERSION),
+    listImageModels: () => listImageModels(events),
+  });
+
+  try {
+    await new Promise<void>((done, fail) => {
+      server.once('error', fail);
+      server.listen(port, '127.0.0.1', done);
+    });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
+    console.error(`Port ${port} is busy. Is imagine ui already open? Or pick another: imagine ui --port ${port + 10}`);
+    return 1;
+  }
+  const url = `http://127.0.0.1:${port}`;
+  console.error(`imagine is open at ${url}\nImages are saved to ${OUTPUT_DIR}\n\nPress Ctrl+C to stop.`);
+  if (!values['no-open'] && process.env.IMAGINE_OPEN !== '0') execFile('open', [url]);
+
+  await new Promise<void>((done) => process.once('SIGINT', done));
+  server.close();
+  server.closeAllConnections();
+  return 0;
+}
+
 /** stdout carries the protocol, so every status line goes to stderr. */
 async function mcp(): Promise<number> {
   const events: RuntimeEvents = { onStatus: (message) => console.error(`imagine: ${message}`) };
   await runMcpServer({
-    generate: imageGenerator(events),
+    generate: imageGenerator(events, VERSION),
     listImageModels: () => listImageModels(events),
     defaultModel: DEFAULT_MODEL,
     outputDir: OUTPUT_DIR,

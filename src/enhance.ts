@@ -2,7 +2,8 @@
  * `--enhance`: a local chat model in Ollama turns a short idea ("a cat astronaut") into a detailed
  * image prompt. Fully offline, like the rest of imagine.
  */
-import { OllamaError, type ModelInfo } from './ollama.ts';
+import { normalizeHost } from './host.ts';
+import { getVersion, listModels, OllamaError, type ModelInfo } from './ollama.ts';
 
 const SYSTEM_PROMPT =
   'You write prompts for a text-to-image model. Turn the user\'s idea into one vivid prompt: the subject, ' +
@@ -49,4 +50,16 @@ export async function enhancePrompt(host: string, model: string, idea: string): 
   const prompt = cleanPrompt(body.message?.content ?? '');
   if (!prompt) throw new Error(`${model} returned an empty prompt. Try again, or leave out --enhance.`);
   return prompt;
+}
+
+/** Enhance with a chat model from the user's own Ollama (the engine only runs image models). */
+export async function enhanceIdea(idea: string, onStatus?: (message: string) => void): Promise<string> {
+  const host = normalizeHost(process.env.OLLAMA_HOST);
+  if (!(await getVersion(host))) {
+    throw new Error(`--enhance uses a chat model in Ollama, but Ollama isn't running at ${host}. Start Ollama, or leave out --enhance.`);
+  }
+  const model = process.env.IMAGINE_ENHANCE_MODEL ?? pickChatModel(await listModels(host));
+  if (!model) throw new Error('--enhance needs a chat model in Ollama. Install one, for example: ollama pull gemma4:12b');
+  onStatus?.(`Writing the prompt with ${model}…`);
+  return enhancePrompt(host, model, idea);
 }

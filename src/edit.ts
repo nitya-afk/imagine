@@ -4,8 +4,12 @@
  * English request can be planned into steps by a local chat model, and a vision model can check each
  * result and ask for a retry.
  */
-import { OllamaError, type ModelInfo } from './ollama.ts';
-import { cleanPrompt } from './enhance.ts';
+import { performance } from 'node:perf_hooks';
+import { cleanPrompt, pickChatModel } from './enhance.ts';
+import type { Generate } from './generator.ts';
+import { normalizeHost } from './host.ts';
+import { getVersion, listModels, OllamaError, type ModelInfo } from './ollama.ts';
+import { MAX_SEED, randomSeed } from './options.ts';
 
 export const EDIT_OPS = ['remove', 'add', 'background', 'face', 'swap-face', 'style', 'extend', 'custom'] as const;
 export type EditOpName = (typeof EDIT_OPS)[number];
@@ -181,4 +185,88 @@ export function pickVisionModel(models: ModelInfo[]): string | null {
     .filter((m) => m.capabilities.includes('vision') && m.capabilities.includes('completion') && !m.capabilities.includes('image'))
     .sort((a, b) => b.size - a.size);
   return (vision.find((m) => m.size <= 12e9) ?? vision[vision.length - 1])?.name ?? null;
+}
+
+/** How a step reads in a plan: "remove the lamp", "swap-face from face.jpg", or the free instruction. */
+export function describeStep(step: EditStep): string {
+  if (step.op === 'custom') return step.value;
+  if (step.op === 'swap-face') return 'swap in the face from the second photo';
+  return `${step.op} ${step.value}`;
+}
+
+export interface EditEvents {
+  plan?: (steps: EditStep[]) => void;
+  status?: (message: string) => void;
+  progress?: (label: string, completed: number, total: number) => void;
+  stepDone?: (step: { index: number; total: number; seconds: number; checked?: boolean; image: Buffer; seed: number }) => void;
+}
+
+export interface EditRun {
+  /** The photo to edit, as PNG. */
+  photo: Buffer;
+  /** A face photo for swap-face steps. */
+  face?: Buffer;
+  /** A plain-English request, planned into steps by a local chat model. */
+  request?: string;
+  /** Explicit steps (from flags or UI controls), run after any planned ones. */
+  steps?: EditStep[];
+  /** Check each step with a vision model and retry ones that didn't take. */
+  check?: boolean;
+  seed?: number;
+  model: string;
+  generate: Generate;
+  events?: EditEvents;
+}
+
+/** Plan (or take) the steps and run them one after another, each on the result of the last. */
+export async function runEdit(run: EditRun): Promise<{ steps: EditStep[]; image: Buffer; seed: number }> {
+  const events = run.events ?? {};
+  const chatHost = normalizeHost(process.env.OLLAMA_HOST);
+  const chatModels = run.request || run.check ? ((await getVersion(chatHost)) ? await listModels(chatHost) : []) : [];
+
+  let planned: EditStep[] = [];
+  if (run.request) {
+    const planner = process.env.IMAGINE_ENHANCE_MODEL ?? pickChatModel(chatModels);
+    if (planner) {
+      events.status?.(`Planning with ${planner}…`);
+      planned = await planEdits(chatHost, planner, run.request, Boolean(run.face)).catch(() => [
+        { op: 'custom' as const, value: run.request! },
+      ]);
+    } else {
+      planned = [{ op: 'custom', value: run.request }];
+    }
+  }
+  const steps = [...planned, ...(run.steps ?? [])];
+  if (steps.length === 0) throw new Error('Say what to change: describe the edit, or pick a step like remove or background.');
+  const vision = run.check ? pickVisionModel(chatModels) : null;
+  if (run.check && !vision) {
+    throw new Error('Checking edits needs a chat model that can see images in Ollama, for example: ollama pull gemma4:12b');
+  }
+  events.plan?.(steps);
+
+  let current = run.photo;
+  let seed = 0;
+  for (const [i, step] of steps.entries()) {
+    const size = step.op === 'extend' ? extendSize(current.readUInt32BE(16), current.readUInt32BE(20), step.value) : undefined;
+    const images = [current, ...(step.op === 'swap-face' && run.face ? [run.face] : [])].map((b) => b.toString('base64'));
+    const expectation = vision ? expectationFor(step) : null;
+    const tries = expectation ? 3 : 1;
+    const start = performance.now();
+    let checked: boolean | undefined;
+    for (let attempt = 0; attempt < tries; attempt++) {
+      seed = run.seed !== undefined ? Math.min(run.seed + i + attempt * 100, MAX_SEED) : randomSeed();
+      const label = `Step ${i + 1}/${steps.length}: ${step.op}${attempt ? ` (retry ${attempt})` : ''}`;
+      events.status?.(label);
+      current = await run.generate(
+        { model: run.model, prompt: promptFor(step), width: size?.width, height: size?.height, seed, images },
+        (p) => events.progress?.(label, p.completed, p.total),
+      );
+      if (!expectation) break;
+      events.status?.(`Checking step ${i + 1} with ${vision}…`);
+      checked = await checkEdit(chatHost, vision!, current, expectation);
+      if (checked) break;
+    }
+    events.stepDone?.({ index: i, total: steps.length, seconds: (performance.now() - start) / 1000, checked, image: current, seed });
+  }
+  return { steps, image: current, seed };
 }
