@@ -21,8 +21,19 @@ import {
   QUANTIZE_FORMATS,
 } from './config.ts';
 import { createModel, parseQuantize, resolveLora, resolveSource } from './create.ts';
+import {
+  checkEdit,
+  expectationFor,
+  extendSize,
+  planEdits,
+  pickVisionModel,
+  promptFor,
+  stepsFromFlags,
+  type EditStep,
+} from './edit.ts';
 import { enhancePrompt, pickChatModel } from './enhance.ts';
 import { normalizeHost } from './host.ts';
+import { prepareImage } from './images.ts';
 import { mergeLoras, parseLoraArg } from './lora.ts';
 import { runMcpServer } from './mcp.ts';
 import { canonicalModel, formatBytes, memoryFit, normalizeModelName } from './models.ts';
@@ -49,6 +60,7 @@ const HELP = `imagine ${VERSION}: local image generation and editing on your Mac
 Usage
   imagine "a cat blasting off from the sun"            generate an image
   imagine "make it night" -i photo.png                 edit an image (up to 4 references)
+  imagine edit photo.jpg "remove the car, make it sunset"   plan and run a series of edits
   imagine "a cat astronaut" --enhance                  let a local chat model write the full prompt
   imagine again image.png [--vary]                     recreate an image from its saved settings
   imagine bench                                        measure this Mac's speed, in a shareable format
@@ -71,6 +83,14 @@ Generate options
   -n, --count <n>        how many images to make (default 1)
   -o, --out <path>       folder, or a .png file name (default ${OUTPUT_DIR})
       --no-open          don't open the result in Preview (it opens by default in a terminal)
+
+Edit options (imagine edit <photo> ["request"])
+      --remove <thing>   remove something (repeatable)       --add <thing>        add something (repeatable)
+      --background <bg>  replace the background               --face <description> change a face
+      --swap-face <img>  put the face from another photo on   --style <style>      restyle the photo
+      --extend <ratio>   widen the frame: 16:9, 4:3, wider, taller or WxH
+      --check            have a vision model check each step and retry ones that didn't take
+      --keep-steps       also save the picture after each step
 
 Create options
       --from <src>       local diffusers folder, or Hugging Face repo (owner/name)
@@ -102,6 +122,15 @@ function parse(argv: string[]) {
       open: { type: 'boolean' },
       'no-open': { type: 'boolean' },
       enhance: { type: 'boolean' },
+      remove: { type: 'string', multiple: true },
+      add: { type: 'string', multiple: true },
+      background: { type: 'string' },
+      face: { type: 'string' },
+      'swap-face': { type: 'string' },
+      style: { type: 'string' },
+      extend: { type: 'string' },
+      check: { type: 'boolean' },
+      'keep-steps': { type: 'boolean' },
       vary: { type: 'boolean' },
       force: { type: 'boolean' },
       from: { type: 'string' },
@@ -140,6 +169,7 @@ async function main(argv: string[]): Promise<number> {
   if (first === 'create' && positionals.length === 2 && second) return create(second, values);
   if (first === 'again' && positionals.length === 2 && second) return again(second, values);
   if (first === 'bench' && only) return bench(values);
+  if (first === 'edit' && second) return edit(second, positionals.slice(2).join(' '), values);
 
   return generate(positionals.join(' '), values);
 }
@@ -150,7 +180,14 @@ async function main(argv: string[]): Promise<number> {
  */
 function imageGenerator(events: RuntimeEvents) {
   return async (params: GenerateParams, onProgress?: (p: StepProgress) => void, idea?: string): Promise<Buffer> => {
-    const request = { ...params, model: normalizeModelName(params.model) };
+    const images = params.images?.length
+      ? await Promise.all(
+          params.images.map(async (b64, i) =>
+            (await prepareImage(Buffer.from(b64, 'base64'), `input image ${i + 1}`)).toString('base64'),
+          ),
+        )
+      : undefined;
+    const request = { ...params, images, model: normalizeModelName(params.model) };
     try {
       const png = await withImageBackend((host) => generateImage(host, request, onProgress), defaultDeps(events), {
         editing: Boolean(request.images?.length),
@@ -251,6 +288,96 @@ async function enhance(idea: string, ui: Progress): Promise<string> {
   ui.clear();
   console.error(`Prompt: ${prompt}`);
   return prompt;
+}
+
+/** `imagine edit`: plan (or take) a list of edits, run them one after another, optionally checking each. */
+async function edit(file: string, request: string, values: Values): Promise<number> {
+  if (!existsSync(file)) throw new Error(`Photo not found: ${file}`);
+  const swapFace = values['swap-face'];
+  if (swapFace && !existsSync(swapFace)) throw new Error(`Face photo not found: ${swapFace}`);
+  const flagSteps = stepsFromFlags({
+    remove: values.remove,
+    add: values.add,
+    face: values.face,
+    swapFace,
+    background: values.background,
+    style: values.style,
+    extend: values.extend,
+  });
+  const ui = createProgress();
+  const chatHost = normalizeHost(process.env.OLLAMA_HOST);
+  const chatModels = request || values.check ? ((await getVersion(chatHost)) ? await listModels(chatHost) : []) : [];
+
+  let planned: EditStep[] = [];
+  if (request) {
+    const planner = process.env.IMAGINE_ENHANCE_MODEL ?? pickChatModel(chatModels);
+    if (planner) {
+      ui.status(`Planning with ${planner}…`);
+      planned = await planEdits(chatHost, planner, request, Boolean(swapFace)).catch(() => [{ op: 'custom' as const, value: request }]);
+      ui.clear();
+    } else {
+      planned = [{ op: 'custom', value: request }];
+    }
+  }
+  const steps = [...planned, ...flagSteps];
+  if (steps.length === 0) {
+    throw new Error('Say what to change: a request in words, or flags like --remove "the lamp" or --background "a beach".');
+  }
+  const vision = values.check ? pickVisionModel(chatModels) : null;
+  if (values.check && !vision) {
+    throw new Error('--check needs a chat model that can see images in Ollama, for example: ollama pull gemma4:12b');
+  }
+
+  console.error('Plan:');
+  steps.forEach((s, i) => console.error(`  ${i + 1}. ${s.op === 'custom' ? s.value : `${s.op} ${s.op === 'swap-face' ? 'from ' + s.value : s.value}`}`));
+
+  const model = normalizeModelName(values.model ?? DEFAULT_MODEL);
+  const run = imageGenerator(runtimeEvents(ui));
+  const baseSeed = values.seed ? parseIntInRange(values.seed, '--seed', 1, MAX_SEED) : undefined;
+  let current = await prepareImage(readFileSync(file), 'the photo', { png: true });
+  const face = swapFace ? await prepareImage(readFileSync(swapFace), 'the face photo') : undefined;
+  const label = request || steps.map((s) => `${s.op} ${s.value}`).join(', ');
+  const outDir = values.out && extname(values.out).toLowerCase() !== '.png' ? resolve(values.out) : OUTPUT_DIR;
+  let lastSeed = 0;
+
+  for (const [i, step] of steps.entries()) {
+    const size = step.op === 'extend' ? extendSize(current.readUInt32BE(16), current.readUInt32BE(20), step.value) : undefined;
+    const images = [current, ...(step.op === 'swap-face' && face ? [face] : [])].map((b) => b.toString('base64'));
+    const expectation = vision ? expectationFor(step) : null;
+    const tries = expectation ? 3 : 1;
+    const start = performance.now();
+    let verdict = '';
+    for (let attempt = 0; attempt < tries; attempt++) {
+      lastSeed = baseSeed !== undefined ? Math.min(baseSeed + i + attempt * 100, MAX_SEED) : randomSeed();
+      const label = `Step ${i + 1}/${steps.length}: ${step.op}${attempt ? ` (retry ${attempt})` : ''}`;
+      ui.status(label);
+      current = await run(
+        { model, prompt: promptFor(step), width: size?.width, height: size?.height, seed: lastSeed, images },
+        (p) => ui.bar(label, p.completed, p.total),
+      );
+      if (!expectation) break;
+      ui.status(`Checking step ${i + 1} with ${vision}…`);
+      if (await checkEdit(chatHost, vision!, current, expectation)) {
+        verdict = ' ✓ checked';
+        break;
+      }
+      verdict = attempt === tries - 1 ? ' ⚠ the check still failed; kept the last try' : '';
+    }
+    ui.clear();
+    console.error(`  ${i + 1}. done in ${((performance.now() - start) / 1000).toFixed(0)} s${verdict}`);
+    if (values['keep-steps'] && i < steps.length - 1) {
+      mkdirSync(outDir, { recursive: true });
+      const stepFile = join(outDir, imageFileName(outDir, `${label} step ${i + 1}`, lastSeed));
+      await writeFile(stepFile, current);
+      console.log(stepFile);
+    }
+  }
+
+  const final = outputPath(values.out, label, lastSeed, 0, 1);
+  await writeFile(final, current);
+  console.log(final);
+  if (shouldOpen(values)) execFile('open', [final]);
+  return 0;
 }
 
 /** Recreate an image from the settings saved inside it; --vary keeps them but picks new seeds. */

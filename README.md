@@ -21,7 +21,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 ## What it can do
 
 - **Generate images from text** with FLUX.2 Klein, fully offline, on any Apple silicon Mac.
-- **Edit photos with words**, such as "make it night" or "turn it into a watercolor", using up to 4 reference images.
+- **Edit photos like an editor**: remove or add things, change the background, change or swap faces, restyle, and extend the scene. Describe it in plain English and a local model plans the steps and checks each result.
 - **Write better prompts for you** (`--enhance`), using a local chat model.
 - **Reproduce any image**: every PNG remembers its prompt, seed and model (`imagine again`).
 - **Quantize models** to MXFP8, MXFP4, INT8, INT4 or NVFP4, all running on native Apple silicon kernels.
@@ -36,6 +36,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 - [What it can do](#what-it-can-do)
 - [Quick start](#quick-start)
 - [Generate and edit](#generate-and-edit)
+- [Edit photos](#edit-photos)
 - [Better prompts, reproducible images](#better-prompts-reproducible-images)
 - [Models and quantization](#models-and-quantization)
 - [Benchmark your Mac](#benchmark-your-mac)
@@ -113,6 +114,45 @@ Without `--size`, the edited image keeps the input's shape. There's no mask or b
 | `--no-open` | | don't open the result in Preview (it opens automatically when you run `imagine` in Terminal) |
 
 Only the saved file path goes to the terminal's output, and nothing pops open when `imagine` runs inside a script or pipe, so it's script-friendly: `path=$(imagine 'a fox')`. Add `--open` to open anyway, or set `IMAGINE_OPEN=0` to never open.
+
+## Edit photos
+
+`imagine edit` works like a photo editor you talk to. Describe the changes in plain English: a local chat model plans them into steps, and each step runs in turn on the result of the last.
+
+```bash
+imagine edit nook.png "remove the lamp, add a steaming cup of coffee next to the cat, and make it a sunny morning" --check
+```
+
+![A planned edit: remove the lamp, add coffee, make it morning](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/edit-plan.jpg)
+
+Or name the steps yourself:
+
+| Flag | Does |
+|---|---|
+| `--remove "the car"` | removes something and fills the space naturally (repeatable) |
+| `--add "a dog on the sofa"` | adds something, matching the light and perspective (repeatable) |
+| `--background "a beach at sunset"` | replaces the background, keeping the subject exactly as is |
+| `--face "an older man with a beard"` | changes a face, keeping the outfit, pose and background |
+| `--swap-face face.jpg` | puts the face from another photo onto the person |
+| `--style "a watercolor painting"` | restyles the picture, keeping the composition |
+| `--extend 16:9` | widens or heightens the frame (`16:9`, `4:3`, `wider`, `taller`, or `WxH`) and fills in the new space |
+
+![What each edit operation does](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/edit-ops.jpg)
+
+Steps chain in a sensible order (content first, then style, then the frame size):
+
+```bash
+imagine edit photo.heic --swap-face face.jpg --background "a neon-lit city street at night" --extend 16:9
+```
+
+![Face swap, then a new background, then a wider frame, from an iPhone HEIC photo](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/edit-steps.jpg)
+
+- **`--check`**: a vision-capable chat model in Ollama (for example `gemma4:12b`) looks at each result. For example it asks "is there a lamp in this picture?" and retries a step with a new seed if the edit didn't take.
+- **`--keep-steps`**: also saves the picture after each step.
+- **Photos from your phone just work.** HEIC, JPEG, PNG, WebP, TIFF, GIF and BMP are all accepted, and large photos are scaled to what the model can use.
+- **Planning** uses the same local chat model as `--enhance`. Without one, the whole request runs as a single edit.
+
+Every step regenerates the picture, so very fine details can drift a little over long chains. Two to four steps work best.
 
 ## Better prompts, reproducible images
 
@@ -324,6 +364,8 @@ claude mcp add imagine -- imagine mcp
 | `The image engine did not start. Its log is at ~/.imagine/engine.log` | Look at the end of that log, then run `imagine stop` and try again. |
 | `--enhance needs a chat model in Ollama` | Install one, for example `ollama pull gemma4:12b`, and make sure Ollama is running. |
 | `… doesn't carry imagine's settings` | `imagine again` only works on images made by imagine 1.2 or later. |
+| `Couldn't read the photo` | Use a PNG, JPEG, WebP, HEIC, TIFF, GIF or BMP file. |
+| `--check needs a chat model that can see images` | Install one, for example `ollama pull gemma4:12b`. |
 | `this model does not support image editing` | Only FLUX.2 Klein can edit. Leave out `-m`, or pick a `flux2-klein` model. |
 | `imagine needs a Mac with Apple silicon` | The engine needs Apple's Metal GPU. Intel Macs, Windows and Linux aren't supported. |
 | The first image is slow | That's the one-time engine download plus loading the model. Later images are much faster, and the model stays loaded for 5 minutes. |
@@ -367,6 +409,7 @@ gh attestation verify imagine-engine-*.tar.gz --repo nitya-afk/imagine
 
 ```bash
 imagine "<prompt>" [options]                         # generate, or edit with -i
+imagine edit <photo> ["request"] [--remove …] [--add …] [--background …] [--face …] [--swap-face img] [--style …] [--extend 16:9] [--check]
 imagine "<idea>" --enhance                           # a local chat model writes the full prompt
 imagine again <image.png> [--vary]                   # recreate an image from its saved settings
 imagine bench                                        # measure this Mac's speed
