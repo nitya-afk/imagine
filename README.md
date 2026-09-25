@@ -21,6 +21,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 ## What it can do
 
 - **Generate images from text** with FLUX.2 Klein, fully offline, on any Apple silicon Mac.
+- **Run Qwen-Image 2.1 GGUF locally** through a Metal-native backend, including the uncensored Q4_K_M variant.
 - **Use it in your browser** (`imagine ui`): create, upload a photo and edit it, compare before and after, and keep editing.
 - **Edit photos like an editor**: remove or add things, change the background, change or swap faces, restyle, and extend the scene. Describe it in plain English and a local model plans the steps and checks each result.
 - **Write better prompts for you** (`--enhance`), using a local chat model.
@@ -170,6 +171,7 @@ imagine ui
 - **Edit**: drop in a photo (or paste one, or pick one you made), say what should change, and watch each planned step run. Quick buttons start a remove, add, background, face or style edit. You can also extend the frame to 16:9, 4:3, 1:1 or 9:16, or swap in a face from a second photo.
 - **Before and after**: drag the slider to compare, then **Keep editing** to carry on from the result.
 - **Contact sheet**: your recent images, with the prompt, seed and model each was made with. Download one, vary it, or edit it.
+- **Delete**: hover over an image and press ×, use Delete on the open image, or Delete all. Deleting is permanent (the Trash is skipped), and Delete all only removes pictures imagine made, never other files in the folder.
 
 ![imagine ui: before and after of a background change](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/ui-edit.jpg)
 
@@ -227,6 +229,23 @@ The variants trade size for quality. `fp4` is 4-bit (smallest and fastest), `fp8
 - `too big`: it's over the engine's limit of about ¾ of your memory, so `imagine pull` refuses it unless you add `--force`.
 
 FLUX.2 Klein is the tested and recommended family. The Z-Image Turbo models are listed because the engine supports them, but they can't edit.
+
+### Qwen-Image 2.1 Uncensored (GGUF)
+
+The Q4_K_M build from `abenzerps/Qwen-Image-2.1-Uncensored-GGUF` runs through a bundled
+`stable-diffusion.cpp` Metal backend. It is separate from the Ollama-compatible engine used for
+FLUX.2 and Z-Image. The one-time pull downloads the 4.6 GB transformer, Qwen's 5.0 GB Q4 text
+encoder, 752 MB vision projector, 676 MB VAE and a 35 MB runtime (about 11.1 GB total):
+
+```bash
+imagine pull qwen-image-2.1-uncensored
+imagine "a cinematic portrait with a neon sign reading LOCAL" -m qwen-image-2.1-uncensored
+```
+
+Qwen uses 25 steps by default in imagine; pass `--steps` to change it. Width and height must be
+divisible by 32. A 24 GB Mac can run this Q4/INT8 combination, but close other memory-heavy apps
+first. The model is under the Qwen Research License, and this particular checkpoint has no built-in
+safety checker; you are responsible for lawful and consensual use.
 
 ### Quantize your own
 

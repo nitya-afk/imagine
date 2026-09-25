@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -233,6 +233,39 @@ test('the gallery lists the newest images first, with their settings', async () 
   assert.ok(images.length >= 4);
   assert.equal(images[0]!.edit, true);
   assert.ok(images.every((i) => typeof i.url === 'string' && String(i.url).startsWith('/images/')));
+});
+
+test('deleting an image removes it from disk and the gallery', async () => {
+  const before = (await (await api('/api/gallery')).json()).images as Array<{ name: string; url: string }>;
+  const victim = before[0]!;
+  assert.equal((await fetch(`${base}/api/images/${encodeURIComponent(victim.name)}`, { method: 'DELETE' })).status, 401);
+  assert.ok(existsSync(join(outputDir, victim.name)));
+
+  const res = await api(`/api/images/${encodeURIComponent(victim.name)}`, { method: 'DELETE' });
+  assert.deepEqual(await res.json(), { deleted: 1 });
+  assert.ok(!existsSync(join(outputDir, victim.name)));
+  assert.equal((await api(victim.url)).status, 404);
+  const after = (await (await api('/api/gallery')).json()).images as Array<{ name: string }>;
+  assert.equal(after.length, before.length - 1);
+
+  assert.equal((await api(`/api/images/${encodeURIComponent(victim.name)}`, { method: 'DELETE' })).status, 404);
+  assert.equal((await api('/api/images/..%2F..%2Fetc%2Fhosts', { method: 'DELETE' })).status, 404);
+});
+
+test('delete all removes only the pictures imagine made', async () => {
+  const other = join(outputDir, 'holiday.png');
+  writeFileSync(other, tinyPng(4, 4));
+  assert.equal((await fetch(`${base}/api/gallery`, { method: 'DELETE' })).status, 401);
+  const count = ((await (await api('/api/gallery')).json()).images as unknown[]).length - 1;
+
+  const res = await api('/api/gallery', { method: 'DELETE' });
+  assert.deepEqual(await res.json(), { deleted: count });
+  const left = (await (await api('/api/gallery')).json()).images as Array<{ name: string }>;
+  assert.deepEqual(
+    left.map((i) => i.name),
+    ['holiday.png'],
+  );
+  assert.ok(existsSync(other));
 });
 
 test('jobs run one at a time', async () => {

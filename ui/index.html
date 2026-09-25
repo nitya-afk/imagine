@@ -204,7 +204,8 @@
 
   /* ── Film strip gallery ── */
   footer { grid-area: strip; border-top: 1px solid var(--line); background: #040404; padding: 0 28px; }
-  .strip-head { display: flex; justify-content: space-between; padding: 12px 0 0; }
+  .strip-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 0 0; }
+  .strip-head > span { display: flex; align-items: center; }
   .film {
     display: flex; gap: 10px; overflow-x: auto; padding: 14px 4px 16px; scrollbar-width: thin;
     background:
@@ -213,8 +214,17 @@
       #1b1511;
     border-radius: 4px; margin: 10px 0 16px;
   }
-  .film button { flex: none; border: 0; padding: 0; background: none; cursor: pointer; border-radius: 3px; overflow: hidden; outline-offset: 2px; transition: transform .2s, filter .2s; filter: saturate(.85) brightness(.9); }
-  .film button:hover, .film button:focus-visible { transform: translateY(-3px); filter: none; }
+  .film .shot { position: relative; flex: none; transition: transform .2s; }
+  .film .shot:hover, .film .shot:focus-within { transform: translateY(-3px); }
+  .film .open { display: block; border: 0; padding: 0; background: none; cursor: pointer; border-radius: 3px; overflow: hidden; outline-offset: 2px; transition: filter .2s; filter: saturate(.85) brightness(.9); }
+  .film .shot:hover .open, .film .open:focus-visible { filter: none; }
+  .film .x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.75); color: var(--ink); font-size: 13px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .15s, background .15s; }
+  .film .shot:hover .x, .film .x:focus-visible { opacity: 1; }
+  .film .x:hover { background: var(--bad); color: #1a0d00; }
+  @media (hover: none) { .film .x { opacity: 1; } }
+  .strip-head .clear-all { border: 0; background: none; padding: 0; cursor: pointer; font: 11px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-left: 18px; }
+  .strip-head .clear-all:hover { color: var(--bad); }
+  .actions .danger:hover { border-color: var(--bad); color: var(--bad); }
   .film img { height: 78px; display: block; }
   .film .none { color: var(--ink-3); font: 12px var(--mono); padding: 28px 8px; }
 
@@ -336,7 +346,7 @@
   </main>
 
   <footer>
-    <div class="strip-head"><span class="edge">Contact sheet</span><span class="edge" id="count"></span></div>
+    <div class="strip-head"><span class="edge">Contact sheet</span><span><span class="edge" id="count"></span><button class="clear-all" id="clear-all" hidden>Delete all</button></span></div>
     <div class="film" id="film"><span class="none">Your images will appear here.</span></div>
   </footer>
 </div>
@@ -347,6 +357,7 @@ const TOKEN = '__IMAGINE_TOKEN__';
 const DEFAULT_MODEL = '__IMAGINE_MODEL__';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage');
+const EMPTY_STAGE = stage.innerHTML;
 const state = { size: '1024x1024', count: 1, extend: '', photo: null, face: null, busy: false, gallery: [] };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -480,12 +491,14 @@ function actionsFor(img) {
     <a href="${img.url}" download="${esc(img.name)}">Download</a>
     <button data-act="edit">Edit this</button>
     ${img.edit ? '' : '<button data-act="vary">Vary</button>'}
-    <button data-act="copy">Copy prompt</button>`;
+    <button data-act="copy">Copy prompt</button>
+    <button data-act="delete" class="danger">Delete</button>`;
 }
 function wireActions(root, img) {
   root.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => {
     if (b.dataset.act === 'edit') useGalleryPhoto(img);
     if (b.dataset.act === 'copy') { navigator.clipboard.writeText(img.prompt || ''); b.textContent = 'Copied'; }
+    if (b.dataset.act === 'delete') deleteImage(img);
     if (b.dataset.act === 'vary') {
       selectTab('create');
       $('prompt').value = img.idea || img.prompt || '';
@@ -658,28 +671,58 @@ document.addEventListener('keydown', (e) => {
 
 // ── Contact sheet ──
 function filmItem(img) {
-  const b = document.createElement('button');
-  b.title = img.prompt || img.name;
-  b.innerHTML = `<img alt="${esc(img.prompt)}" src="${img.url}" loading="lazy">`;
-  b.onclick = () => showImages([img]);
-  return b;
+  const shot = document.createElement('div');
+  shot.className = 'shot';
+  shot.dataset.name = img.name;
+  shot.innerHTML = `<button class="open" title="${esc(img.prompt || img.name)}"><img alt="${esc(img.prompt)}" src="${img.url}" loading="lazy"></button><button class="x" aria-label="Delete this image" title="Delete">×</button>`;
+  shot.querySelector('.open').onclick = () => showImages([img]);
+  shot.querySelector('.x').onclick = () => deleteImage(img);
+  return shot;
+}
+function renderCount() {
+  const n = state.gallery.length;
+  $('count').textContent = n ? `${n} frame${n === 1 ? '' : 's'}` : '';
+  $('clear-all').hidden = n === 0;
+  if (!n) $('film').innerHTML = '<span class="none">Your images will appear here.</span>';
 }
 function addToFilm(img) {
   state.gallery.unshift(img);
   const film = $('film');
   film.querySelector('.none')?.remove();
   film.prepend(filmItem(img));
-  $('count').textContent = `${state.gallery.length} frames`;
+  renderCount();
 }
+/** Forget an image everywhere on the page once it's gone from disk. */
+function forget(names) {
+  state.gallery = state.gallery.filter((g) => !names.has(g.name));
+  document.querySelectorAll('#film .shot').forEach((el) => { if (names.has(el.dataset.name)) el.remove(); });
+  if (state.photo?.from && names.has(state.photo.from)) { state.photo = null; photoPicker.show(); }
+  const shown = [...stage.querySelectorAll('img')].some((el) => [...names].some((n) => el.src.endsWith('/images/' + encodeURIComponent(n))));
+  if (shown || !state.gallery.length) stage.innerHTML = EMPTY_STAGE;
+  renderCount();
+}
+async function deleteImage(img) {
+  if (!confirm('Delete this image? It is removed from your Mac for good, not moved to the Trash.')) return;
+  const res = await api(`/api/images/${encodeURIComponent(img.name)}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) return alert((await res.json().catch(() => ({}))).error || 'Could not delete the image.');
+  forget(new Set([img.name]));
+}
+$('clear-all').onclick = async () => {
+  if (!confirm('Delete every image imagine has made? They are removed from your Mac for good, not moved to the Trash.')) return;
+  const res = await api('/api/gallery', { method: 'DELETE' });
+  if (!res.ok) return alert('Could not delete the images.');
+  forget(new Set(state.gallery.map((g) => g.name)));
+};
 async function loadGallery() {
   const res = await api('/api/gallery');
   if (!res.ok) return;
   const { images } = await res.json();
   state.gallery = images;
-  if (!images.length) return;
-  $('film').innerHTML = '';
-  images.forEach((img) => $('film').append(filmItem(img)));
-  $('count').textContent = `${images.length} frames`;
+  if (images.length) {
+    $('film').innerHTML = '';
+    images.forEach((img) => $('film').append(filmItem(img)));
+  }
+  renderCount();
 }
 async function loadModels() {
   const res = await api('/api/models');

@@ -3,7 +3,7 @@
  * every API call needs the per-session token baked into the page, so other websites can't drive it.
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { basename, join } from 'node:path';
@@ -87,6 +87,11 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
       return json(res, { models: await deps.listImageModels(), defaultModel: deps.defaultModel });
     }
     if (req.method === 'GET' && path === '/api/gallery') return json(res, { images: gallery() });
+    if (req.method === 'DELETE' && path === '/api/gallery') return json(res, { deleted: deleteAll() });
+    if (req.method === 'DELETE' && path.startsWith('/api/images/')) {
+      unlinkSync(galleryFile(decodeURIComponent(path.slice(12))));
+      return json(res, { deleted: 1 });
+    }
     if (req.method === 'POST' && path === '/api/generate') return generate(req, res);
     if (req.method === 'POST' && path === '/api/edit') return edit(req, res);
     throw new HttpError(404, 'Not found.');
@@ -228,6 +233,20 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
       .sort((a, b) => b.time - a.time)
       .slice(0, 60)
       .map(({ name }) => describe(name, readFileSync(join(deps.outputDir, name))));
+  }
+
+  /** Every picture imagine made in the output folder, and nothing else that happens to be there. */
+  function deleteAll(): number {
+    if (!existsSync(deps.outputDir)) return 0;
+    let deleted = 0;
+    for (const name of readdirSync(deps.outputDir)) {
+      if (!name.endsWith('.png')) continue;
+      const file = join(deps.outputDir, name);
+      if (!readMetadata(readFileSync(file))?.generator?.startsWith('imagine')) continue;
+      unlinkSync(file);
+      deleted++;
+    }
+    return deleted;
   }
 
   function galleryFile(name: string): string {
