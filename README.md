@@ -22,7 +22,9 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 
 - [Quick start](#quick-start)
 - [Generate and edit](#generate-and-edit)
+- [Better prompts, reproducible images](#better-prompts-reproducible-images)
 - [Models and quantization](#models-and-quantization)
+- [Benchmark your Mac](#benchmark-your-mac)
 - [Use it from your apps (OpenAI API)](#use-it-from-your-apps-openai-api)
 - [Use it from AI assistants (MCP)](#use-it-from-ai-assistants-mcp)
 - [Troubleshooting](#troubleshooting)
@@ -98,6 +100,28 @@ Without `--size`, the edited image keeps the input's shape. There's no mask or b
 
 Only the saved file path goes to the terminal's output, and nothing pops open when `imagine` runs inside a script or pipe, so it's script-friendly: `path=$(imagine 'a fox')`. Add `--open` to open anyway, or set `IMAGINE_OPEN=0` to never open.
 
+## Better prompts, reproducible images
+
+**Let a local chat model write the prompt.** Short ideas make flat images. `--enhance` hands your idea to a chat model in your own Ollama, which writes a detailed prompt (subject, setting, lighting, style) before the image is made. It's still fully offline, and the chat model is unloaded straight afterwards so it doesn't slow the image model.
+
+```bash
+imagine "a cat astronaut" --enhance
+# Prompt: A fluffy ginger tabby cat wearing a high-tech white and gold spacesuit, complete with a glass
+# helmet. The cat is floating inside a futuristic spaceship cabin with glowing control panels…
+```
+
+`--enhance` needs Ollama running with a chat model, for example `ollama pull gemma4:12b`. It picks the largest one that loads comfortably, or you can set `IMAGINE_ENHANCE_MODEL`.
+
+**Every image remembers how it was made.** The prompt, seed, model, size and steps are saved inside each PNG, along with your original idea when you used `--enhance`. Other image tools can read them too (the `parameters` field). Recreate or riff on any image:
+
+```bash
+imagine again fox.png            # the exact same image, byte for byte
+imagine again fox.png --vary     # same settings, new seed
+imagine again fox.png --vary -n 4 --size 1536x1024
+```
+
+Edits can be redone too: add the original picture with `-i`.
+
 ## Models and quantization
 
 ```bash
@@ -145,6 +169,24 @@ imagine "a watercolor fox" -m klein-4b-int4
 Importing takes about 12 seconds once the files are on disk. The Hugging Face download (16 GB for FLUX.2 Klein 4B) resumes if it's interrupted, and it's kept in `~/.imagine/huggingface` so you can create other variants from it. Only the transformer and text-encoder layers are quantized; the VAE, embeddings and norms stay in full precision. For gated models such as FLUX.2 Klein 9B, accept the licence on Hugging Face and set `HF_TOKEN`.
 
 Why only `int4` and `int8`? They're the formats this engine has fast quantized kernels for on Apple silicon, so they save memory and time as well as disk. `nvfp4` and `mxfp8` would only shrink the file, and they currently fail to load, so `imagine` refuses them.
+
+## Benchmark your Mac
+
+```bash
+imagine bench
+```
+```
+imagine bench: Apple M5 Pro, 24 GB, x/flux2-klein
+
+  load + first 512×512   18.3 s
+  512×512                4.3 s per image (average of 2)
+  1024×1024              18.0 s per image (average of 2)
+
+Share your result:
+| Apple M5 Pro | 24 GB | x/flux2-klein | 4.3 s | 18.0 s | imagine 1.2.0 |
+```
+
+It uses a fixed prompt and seeds, so results from different Macs are comparable. Close other heavy apps first: memory pressure (for example a large chat model still loaded) can make it several times slower. [Open an issue](https://github.com/nitya-afk/imagine/issues) with your row and it'll go in a results table here.
 
 ## Use it from your apps (OpenAI API)
 
@@ -237,6 +279,8 @@ claude mcp add imagine -- imagine mcp
 | `Port 11435 is already used by …` | Another program is on the engine's port. Stop it, or pick another port: `export IMAGINE_ENGINE_PORT=11445`. |
 | `Could not download … Run the command again to resume.` | Your connection dropped. Run the same command again; it continues where it stopped. |
 | `The image engine did not start. Its log is at ~/.imagine/engine.log` | Look at the end of that log, then run `imagine stop` and try again. |
+| `--enhance needs a chat model in Ollama` | Install one, for example `ollama pull gemma4:12b`, and make sure Ollama is running. |
+| `… doesn't carry imagine's settings` | `imagine again` only works on images made by imagine 1.2 or later. |
 | `this model does not support image editing` | Only FLUX.2 Klein can edit. Leave out `-m`, or pick a `flux2-klein` model. |
 | `imagine needs a Mac with Apple silicon` | The engine needs Apple's Metal GPU. Intel Macs, Windows and Linux aren't supported. |
 | The first image is slow | That's the one-time engine download plus loading the model. Later images are much faster, and the model stays loaded for 5 minutes. |
@@ -266,6 +310,9 @@ imagine (terminal, OpenAI API, MCP)
 
 ```bash
 imagine "<prompt>" [options]                         # generate, or edit with -i
+imagine "<idea>" --enhance                           # a local chat model writes the full prompt
+imagine again <image.png> [--vary]                   # recreate an image from its saved settings
+imagine bench                                        # measure this Mac's speed
 imagine models                                       # models, sizes, and what fits this Mac
 imagine pull [model]                                 # download a model (default x/flux2-klein)
 imagine create <name> --from <src> [--quantize int4|int8]   # import and quantize a model
@@ -283,6 +330,7 @@ imagine --help                                       # every option
 | `IMAGINE_MODEL` | `x/flux2-klein` | default model |
 | `IMAGINE_OUTPUT_DIR` | `~/Pictures/imagine` | where images are saved |
 | `IMAGINE_OPEN` | `1` | set to `0` to never open images in Preview |
+| `IMAGINE_ENHANCE_MODEL` | largest chat model that fits | the Ollama chat model `--enhance` uses |
 | `IMAGINE_ENGINE_PORT` | `11435` | port for imagine-engine |
 | `IMAGINE_OLLAMA_HOST` | | always use this server instead (for example an Ollama that can make images) |
 | `IMAGINE_HOME` | `~/.imagine` | engine, logs and downloads |

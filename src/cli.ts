@@ -4,8 +4,10 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { totalmem } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { parseArgs } from 'node:util';
 import { defaultDeps, resolveImageHost, withImageBackend } from './backend.ts';
+import { BENCH_PROMPT, BENCH_RUNS, formatBench, machine } from './bench.ts';
 import {
   DEFAULT_MODEL,
   DEFAULT_SERVE_PORT,
@@ -18,6 +20,7 @@ import {
   QUANTIZE_FORMATS,
 } from './config.ts';
 import { createModel, parseQuantize, resolveSource } from './create.ts';
+import { enhancePrompt, pickChatModel } from './enhance.ts';
 import { normalizeHost } from './host.ts';
 import { runMcpServer } from './mcp.ts';
 import { canonicalModel, formatBytes, memoryFit, normalizeModelName } from './models.ts';
@@ -31,6 +34,7 @@ import {
   type StepProgress,
 } from './ollama.ts';
 import { imageFileName, MAX_SEED, parseIntInRange, parseSize, randomSeed } from './options.ts';
+import { pngSize, readMetadata, withMetadata } from './png.ts';
 import { engineHost, isEngineInstalled, stopEngine, type RuntimeEvents } from './runtime.ts';
 import { createImageServer } from './server.ts';
 
@@ -43,6 +47,9 @@ const HELP = `imagine ${VERSION}: local image generation and editing on your Mac
 Usage
   imagine "a cat blasting off from the sun"            generate an image
   imagine "make it night" -i photo.png                 edit an image (up to 4 references)
+  imagine "a cat astronaut" --enhance                  let a local chat model write the full prompt
+  imagine again image.png [--vary]                     recreate an image from its saved settings
+  imagine bench                                        measure this Mac's speed, in a shareable format
   imagine serve                                        OpenAI-compatible API on http://127.0.0.1:${DEFAULT_SERVE_PORT}/v1
   imagine mcp                                          MCP server over stdio, for AI apps and agents
   imagine models                                       image models, their sizes, and what fits this Mac
@@ -57,6 +64,8 @@ Generate options
   -s, --size <WxH>       image size (default ${DEFAULT_SIZE}, or the input's shape when editing)
       --steps <n>        denoising steps (model default if omitted)
       --seed <n>         seed, to reproduce an image
+      --enhance          expand a short idea into a detailed prompt with a chat model in Ollama
+      --vary             with \`again\`: same settings, new seed
   -n, --count <n>        how many images to make (default 1)
   -o, --out <path>       folder, or a .png file name (default ${OUTPUT_DIR})
       --no-open          don't open the result in Preview (it opens by default in a terminal)
@@ -88,6 +97,8 @@ function parse(argv: string[]) {
       out: { type: 'string', short: 'o' },
       open: { type: 'boolean' },
       'no-open': { type: 'boolean' },
+      enhance: { type: 'boolean' },
+      vary: { type: 'boolean' },
       force: { type: 'boolean' },
       from: { type: 'string' },
       quantize: { type: 'string', short: 'q' },
@@ -122,17 +133,33 @@ async function main(argv: string[]): Promise<number> {
   if (first === 'stop' && only) return stop();
   if (first === 'pull' && positionals.length <= 2) return pull(second ?? DEFAULT_MODEL, values);
   if (first === 'create' && positionals.length === 2 && second) return create(second, values);
+  if (first === 'again' && positionals.length === 2 && second) return again(second, values);
+  if (first === 'bench' && only) return bench(values);
 
   return generate(positionals.join(' '), values);
 }
 
-/** Every front end (CLI, API, MCP) generates through this: edits go to the engine, the rest may use your Ollama. */
+/**
+ * Every front end (CLI, API, MCP) generates through this: edits go to the engine, the rest may use
+ * your Ollama, and each PNG records how it was made.
+ */
 function imageGenerator(events: RuntimeEvents) {
-  return async (params: GenerateParams, onProgress?: (p: StepProgress) => void): Promise<Buffer> => {
+  return async (params: GenerateParams, onProgress?: (p: StepProgress) => void, idea?: string): Promise<Buffer> => {
     const request = { ...params, model: normalizeModelName(params.model) };
     try {
-      return await withImageBackend((host) => generateImage(host, request, onProgress), defaultDeps(events), {
+      const png = await withImageBackend((host) => generateImage(host, request, onProgress), defaultDeps(events), {
         editing: Boolean(request.images?.length),
+      });
+      const size = pngSize(png) ?? { width: request.width ?? 0, height: request.height ?? 0 };
+      return withMetadata(png, {
+        prompt: request.prompt,
+        idea,
+        model: request.model,
+        seed: request.seed,
+        ...size,
+        steps: request.steps,
+        edit: Boolean(request.images?.length),
+        generator: `imagine ${VERSION}`,
       });
     } catch (err) {
       if (err instanceof OllamaError && /not found/i.test(err.message)) {
@@ -145,7 +172,7 @@ function imageGenerator(events: RuntimeEvents) {
 
 // ── generate ────────────────────────────────────────────────────────────────
 
-async function generate(prompt: string, values: Values): Promise<number> {
+async function generate(idea: string, values: Values, recordedIdea?: string): Promise<number> {
   const images = (values.image ?? []).map((file) => {
     if (!existsSync(file)) throw new Error(`Input image not found: ${file}`);
     return readFileSync(file).toString('base64');
@@ -160,17 +187,22 @@ async function generate(prompt: string, values: Values): Promise<number> {
   const model = normalizeModelName(values.model ?? DEFAULT_MODEL);
 
   const ui = createProgress();
+  const prompt = values.enhance ? await enhance(idea, ui) : idea;
+  const originalIdea = values.enhance ? idea : recordedIdea;
   const run = imageGenerator(runtimeEvents(ui));
   const saved: string[] = [];
   for (let i = 0; i < count; i++) {
     const seed = firstSeed !== undefined ? Math.min(firstSeed + i, MAX_SEED) : randomSeed();
     ui.status(count > 1 ? `Loading ${model} (${i + 1}/${count})…` : `Loading ${model}…`);
-    const png = await run({ model, prompt, width, height, steps, seed, images }, (p) =>
-      ui.bar(images.length ? 'Editing' : 'Generating', p.completed, p.total),
+    const png = await run(
+      { model, prompt, width, height, steps, seed, images },
+      (p) => ui.bar(images.length ? 'Editing' : 'Generating', p.completed, p.total),
+      originalIdea,
     );
     ui.clear();
 
-    const file = outputPath(values.out, prompt, seed, i, count);
+    // Name files after the short idea, not the long enhanced prompt.
+    const file = outputPath(values.out, originalIdea ?? prompt, seed, i, count);
     await writeFile(file, png);
     console.log(file);
     saved.push(file);
@@ -197,6 +229,74 @@ function outputPath(out: string | undefined, prompt: string, seed: number, index
   const dir = resolve(out ?? OUTPUT_DIR);
   mkdirSync(dir, { recursive: true });
   return join(dir, imageFileName(dir, prompt, seed));
+}
+
+/** Rewrite a short idea with a chat model from the user's own Ollama (the engine only runs image models). */
+async function enhance(idea: string, ui: Progress): Promise<string> {
+  const host = normalizeHost(process.env.OLLAMA_HOST);
+  if (!(await getVersion(host))) {
+    throw new Error(`--enhance uses a chat model in Ollama, but Ollama isn't running at ${host}. Start Ollama, or leave out --enhance.`);
+  }
+  const model = process.env.IMAGINE_ENHANCE_MODEL ?? pickChatModel(await listModels(host));
+  if (!model) {
+    throw new Error('--enhance needs a chat model in Ollama. Install one, for example: ollama pull gemma4:12b');
+  }
+  ui.status(`Writing the prompt with ${model}…`);
+  const prompt = await enhancePrompt(host, model, idea);
+  ui.clear();
+  console.error(`Prompt: ${prompt}`);
+  return prompt;
+}
+
+/** Recreate an image from the settings saved inside it; --vary keeps them but picks new seeds. */
+async function again(file: string, values: Values): Promise<number> {
+  if (!existsSync(file)) throw new Error(`Image not found: ${file}`);
+  const meta = readMetadata(readFileSync(file));
+  if (!meta) throw new Error(`${file} doesn't carry imagine's settings, so it can't be recreated.`);
+  if (meta.edit && !values.image?.length) {
+    throw new Error('That image was an edit. Add the original picture with -i to redo it.');
+  }
+  console.error(`Prompt: ${meta.prompt}`);
+  return generate(
+    meta.prompt,
+    {
+      ...values,
+      enhance: false,
+      model: values.model ?? meta.model,
+      size: values.size ?? (meta.width && meta.height ? `${meta.width}x${meta.height}` : undefined),
+      steps: values.steps ?? (meta.steps ? String(meta.steps) : undefined),
+      seed: values.seed ?? (values.vary ? undefined : String(meta.seed)),
+    },
+    meta.idea,
+  );
+}
+
+async function bench(values: Values): Promise<number> {
+  const model = normalizeModelName(values.model ?? DEFAULT_MODEL);
+  const ui = createProgress();
+  const run = imageGenerator(runtimeEvents(ui));
+  const times: number[] = [];
+  for (const [i, r] of BENCH_RUNS.entries()) {
+    const label = `Benchmark ${i + 1}/${BENCH_RUNS.length} (${r.size}×${r.size}${r.warmup ? ', loading the model' : ''})`;
+    ui.status(label);
+    const start = performance.now();
+    await run({ model, prompt: BENCH_PROMPT, width: r.size, height: r.size, seed: r.seed }, (p) =>
+      ui.bar(label, p.completed, p.total),
+    );
+    times.push((performance.now() - start) / 1000);
+  }
+  ui.clear();
+  console.log(
+    formatBench({
+      ...machine(),
+      model,
+      version: VERSION,
+      firstRun: times[0]!,
+      small: times.slice(1, 3),
+      large: times.slice(3, 5),
+    }),
+  );
+  return 0;
 }
 
 // ── serve / mcp ─────────────────────────────────────────────────────────────
