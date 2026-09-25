@@ -7,7 +7,7 @@
 set -euo pipefail
 
 OLLAMA_VERSION=0.32.5
-ENGINE_VERSION="${OLLAMA_VERSION}-imagine.1"
+ENGINE_VERSION="${OLLAMA_VERSION}-imagine.2"
 # From https://github.com/ollama/ollama/releases/download/v0.32.5/sha256sum.txt
 OLLAMA_TARBALL_SHA256=5789dd037a86adb328c72c11fc45e6c558452d07e5b50814a8bdb7b0fbdbcd81
 

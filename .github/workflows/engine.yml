@@ -1,0 +1,41 @@
+name: Engine
+
+# Builds imagine-engine from source on GitHub's Apple silicon runners and signs a build provenance
+# attestation, so anyone can check which commit and workflow produced the file:
+#   gh attestation verify imagine-engine-*.tar.gz --repo nitya-afk/imagine
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['engine/**', '.github/workflows/engine.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: read
+      id-token: write # sign the attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - run: engine/build.sh
+      - name: Smoke test
+        run: |
+          version=$(sed -n 's/^ENGINE_VERSION="\${OLLAMA_VERSION}\(.*\)"$/0.32.5\1/p' engine/build.sh)
+          tar -xzf engine/dist/imagine-engine-*.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/imagine-engine/imagine-engine" --version 2>&1 | tee /dev/stderr | grep -q "$version"
+      - uses: actions/attest-build-provenance@v2
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          subject-path: engine/dist/imagine-engine-*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imagine-engine
+          path: engine/dist/
+          retention-days: 30
