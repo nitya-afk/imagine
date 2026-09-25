@@ -47,10 +47,10 @@ index c4f6175..492272c 100644
  		layers = append(layers, extra...)
 diff --git a/x/create/imagegen.go b/x/create/imagegen.go
 new file mode 100644
-index 0000000..075e8f4
+index 0000000..885bacf
 --- /dev/null
 +++ b/x/create/imagegen.go
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,185 @@
 +package create
 +
 +import (
@@ -84,16 +84,14 @@ index 0000000..075e8f4
 +}
 +
 +// CreateImageGenModel imports a diffusers image pipeline (model_index.json plus one folder per
-+// component) into tensor and config layers. With quantize set (int4 or int8), linear weights in the
++// component) into tensor and config layers. With quantize set, linear weights in the
 +// text encoder and transformer are quantized on the MLX thread; the VAE, embeddings and norms keep
 +// their precision.
 +func CreateImageGenModel(modelName, modelDir, quantize string, store BlobStore, writeManifest ManifestWriter, fn func(status string)) error {
 +	if quantize != "" {
 +		quantize = quant.Canonical(quantize)
-+		// The image runner has quantized-matmul kernels only for the affine formats; nvfp4 and mxfp8
-+		// weights go through a load-time dequantize path that fails in this release.
-+		if !slices.Contains([]string{"int4", "int8"}, quantize) {
-+			return fmt.Errorf("unsupported quantization type %q for image models: supported types are int4 and int8", quantize)
++		if !slices.Contains([]string{"int4", "int8", "nvfp4", "mxfp4", "mxfp8"}, quantize) {
++			return fmt.Errorf("unsupported quantization type %q for image models: supported types are int4, int8, nvfp4, mxfp4, mxfp8", quantize)
 +		}
 +		if !QuantizeSupported() {
 +			return fmt.Errorf("quantization needs MLX, which could not be loaded")

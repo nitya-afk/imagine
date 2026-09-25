@@ -1,0 +1,67 @@
+diff --git a/x/imagegen/safetensors/loader.go b/x/imagegen/safetensors/loader.go
+index bf2110d..0cd51f2 100644
+--- a/x/imagegen/safetensors/loader.go
++++ b/x/imagegen/safetensors/loader.go
+@@ -32,6 +32,9 @@ func QuantizationParams(quantization string) (groupSize, bits int, mode string)
+ 	case "FP4", "Q4", "INT4":
+ 		// 4-bit quantization with affine mode (scale + qbias)
+ 		return 32, 4, "affine"
++	case "MXFP4":
++		// OCP MX FP4: group_size=32, bits=4, E8M0 scales (no qbias)
++		return 32, 4, "mxfp4"
+ 	case "MXFP8":
+ 		// Microsoft MX FP8: group_size=32, bits=8, E4M3 scales (no qbias)
+ 		return 32, 8, "mxfp8"
+@@ -287,12 +290,16 @@ func LoadMultiLinearLayer(weights WeightSource, path string) (nn.MultiLinearLaye
+ 		groupSize8 := weightCols * 4 / scalesCols
+ 
+ 		var bits, groupSize int
++		mode := "affine"
+ 		// Use metadata to help disambiguate when shapes are ambiguous
+ 		// (e.g., Q4 with group_size=64 has same shapes as Q8 with group_size=32)
+ 		quantType := strings.ToUpper(weights.Quantization())
+ 		isQ8Type := quantType == "Q8" || quantType == "FP8" || quantType == "INT8"
+ 
+-		if groupSize4 == 32 {
++		if quantType == "NVFP4" || quantType == "MXFP8" || quantType == "MXFP4" {
++			// Microscaling formats record their mode and group size; decoding them as affine fails.
++			groupSize, bits, mode = QuantizationParams(quantType)
++		} else if groupSize4 == 32 {
+ 			// Unambiguous: Q4 with group_size=32
+ 			bits = 4
+ 			groupSize = 32
+@@ -315,7 +322,7 @@ func LoadMultiLinearLayer(weights WeightSource, path string) (nn.MultiLinearLaye
+ 			packFactor := 32 / bits
+ 			groupSize = weightCols * packFactor / scalesCols
+ 		}
+-		weight = mlx.Dequantize(weight, scales, qbiases, groupSize, bits, "affine")
++		weight = mlx.Dequantize(weight, scales, qbiases, groupSize, bits, mode)
+ 	}
+ 
+ 	return nn.NewMultiLinear(weight), nil
+@@ -370,7 +377,11 @@ func LoadLinearLayer(weights WeightSource, path string) (nn.LinearLayer, error)
+ 		quantType := strings.ToUpper(weights.Quantization())
+ 		isQ8Type := quantType == "Q8" || quantType == "FP8" || quantType == "INT8"
+ 
+-		if groupSize4 == 32 {
++		if quantType == "NVFP4" || quantType == "MXFP8" || quantType == "MXFP4" {
++			// Microscaling formats record their mode and group size; shapes alone would read an
++			// mxfp8 weight as 4-bit affine with group size 64.
++			groupSize, bits, mode = QuantizationParams(quantType)
++		} else if groupSize4 == 32 {
+ 			// Unambiguous: Q4 with group_size=32
+ 			bits = 4
+ 			groupSize = 32
+@@ -394,9 +405,9 @@ func LoadLinearLayer(weights WeightSource, path string) (nn.LinearLayer, error)
+ 			groupSize = weightCols * packFactor / scalesCols
+ 		}
+ 
+-		// NVFP4 and MXFP8 don't have native quantized matmul kernels in MLX,
+-		// so we always dequantize at load time. Affine modes (FP4, FP8) have kernel support.
+-		if mlx.MetalIsAvailable() && mode != "nvfp4" && mode != "mxfp8" {
++		// MLX's quantized matmul handles affine, nvfp4, mxfp4 and mxfp8 natively on Metal, so the
++		// weights stay quantized in memory. Elsewhere, fall back to dequantizing at load.
++		if mlx.MetalIsAvailable() {
+ 			return &nn.QuantizedLinear{
+ 				Weight:    weight,
+ 				Scales:    scales,

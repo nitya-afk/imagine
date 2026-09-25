@@ -8,6 +8,7 @@ The image engine that `imagine` runs on your Mac.
 Patches:
 
 - `0001-flux2-image-editing`: passes input images to FLUX.2's editing pipeline. In v0.32.5 the image runner received input images but never used them.
-- `0002-image-model-import`: restores `create --experimental` for diffusers image models with `int4`/`int8` quantization (tested with FLUX.2 Klein 4B). Ollama dropped image import from its July 2026 importer rewrite. The last release that had it crashes with a thread error ("There is no Stream(gpu, 1) in current thread") on current MLX. This patch uses the rewrite's quantizer, which runs MLX on a pinned thread.
+- `0002-image-model-import`: restores `create --experimental` for diffusers image models with `int4`, `int8`, `nvfp4`, `mxfp4` or `mxfp8` quantization (tested with FLUX.2 Klein 4B). Ollama dropped image import from its July 2026 importer rewrite. The last release that had it crashes with a thread error ("There is no Stream(gpu, 1) in current thread") on current MLX. This patch uses the rewrite's quantizer, which runs MLX on a pinned thread.
+- `0003-native-microscaling-formats`: runs `nvfp4`, `mxfp4` and `mxfp8` weights with MLX's native quantized matmul instead of expanding them at load. The loader also misread `mxfp8` as 4-bit affine (the shapes match) and decoded fused projections as affine whatever their format; it now uses the format recorded in each blob.
 
 The released engine is built by GitHub Actions from this repo (`.github/workflows/engine.yml`) with a signed build provenance attestation. To check a download, run `gh attestation verify imagine-engine-*.tar.gz --repo nitya-afk/imagine`. To rebuild it yourself, run `engine/build.sh`. Not affiliated with or endorsed by Ollama or Apple.
