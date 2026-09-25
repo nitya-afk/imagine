@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { ENGINE_BIN, HF_CACHE_DIR, QUANTIZE_FORMATS } from './config.ts';
-import { downloadHfSnapshot, parseHfRepo, type HfProgress } from './huggingface.ts';
+import { downloadHfSnapshot, listHfFiles, parseHfRepo, type HfProgress } from './huggingface.ts';
 import { engineEnv, installEngine, type RuntimeEvents } from './runtime.ts';
 
 export type QuantizeFormat = (typeof QUANTIZE_FORMATS)[number]['name'];
@@ -60,4 +60,32 @@ export async function createModel(
     child.once('error', fail);
     child.once('exit', (code) => (code === 0 ? done() : fail(new Error(`Creating ${name} failed (exit ${code}).`))));
   });
+}
+
+/**
+ * A LoRA from a local file, or from Hugging Face as owner/name (the repo's only .safetensors file)
+ * or owner/name/path/file.safetensors. Downloads land in ~/.imagine/huggingface.
+ */
+export async function resolveLora(ref: string, onProgress?: (progress: HfProgress) => void): Promise<string> {
+  const local = resolve(ref.startsWith('~/') ? join(homedir(), ref.slice(2)) : ref);
+  if (existsSync(local)) return local;
+
+  const [owner, name, ...rest] = ref.replace(/^hf:/, '').split('/');
+  if (!owner || !name || !parseHfRepo(`${owner}/${name}`)) throw new Error(`LoRA not found: ${ref}`);
+  const repo = `${owner}/${name}`;
+  let file = rest.join('/');
+  if (!file) {
+    const candidates = (await listHfFiles(repo)).filter((f) => f.path.endsWith('.safetensors'));
+    if (candidates.length !== 1) {
+      throw new Error(
+        candidates.length
+          ? `${repo} has ${candidates.length} LoRA files. Name one, for example: ${repo}/${candidates[0]!.path}`
+          : `${repo} has no .safetensors file.`,
+      );
+    }
+    file = candidates[0]!.path;
+  }
+  const dest = join(HF_CACHE_DIR, owner, name);
+  await downloadHfSnapshot({ repo, dest, include: (path) => path === file, onProgress });
+  return join(dest, file);
 }

@@ -31,11 +31,9 @@ test('memory fit follows the engine limit of about three quarters of RAM', () =>
   assert.equal(memoryFit(34.72 * GB, 64 * GB), 'tight');
 });
 
-
-test('create accepts the formats the engine has kernels for', () => {
-  assert.equal(parseQuantize('INT4'), 'int4');
-  assert.equal(parseQuantize('int8'), 'int8');
-  for (const unsupported of ['nvfp4', 'mxfp8', 'mxfp4', 'q4_K_M']) {
-    assert.throws(() => parseQuantize(unsupported), /Use one of: int4, int8/);
+test('create accepts every format the engine runs natively', () => {
+  for (const format of ['mxfp8', 'mxfp4', 'int8', 'int4', 'nvfp4']) assert.equal(parseQuantize(format.toUpperCase()), format);
+  for (const unsupported of ['q4_K_M', 'fp16', 'nf4']) {
+    assert.throws(() => parseQuantize(unsupported), /Use one of: mxfp8, mxfp4, int8, int4, nvfp4/);
   }
 });

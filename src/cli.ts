@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { totalmem } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
@@ -14,14 +14,16 @@ import {
   DEFAULT_SIZE,
   ENGINE_VERSION,
   HF_CACHE_DIR,
+  IMAGINE_HOME,
   KNOWN_MODELS,
   LOG_FILE,
   OUTPUT_DIR,
   QUANTIZE_FORMATS,
 } from './config.ts';
-import { createModel, parseQuantize, resolveSource } from './create.ts';
+import { createModel, parseQuantize, resolveLora, resolveSource } from './create.ts';
 import { enhancePrompt, pickChatModel } from './enhance.ts';
 import { normalizeHost } from './host.ts';
+import { mergeLoras, parseLoraArg } from './lora.ts';
 import { runMcpServer } from './mcp.ts';
 import { canonicalModel, formatBytes, memoryFit, normalizeModelName } from './models.ts';
 import {
@@ -54,7 +56,7 @@ Usage
   imagine mcp                                          MCP server over stdio, for AI apps and agents
   imagine models                                       image models, their sizes, and what fits this Mac
   imagine pull [model]                                 download a model (default ${DEFAULT_MODEL})
-  imagine create <name> --from <src> [--quantize fmt]  import a diffusers model, optionally quantized
+  imagine create <name> --from <src> [--quantize fmt] [--lora file]  import a model; quantize, add LoRAs
   imagine status                                       show which engine is doing the work
   imagine stop                                         stop the background engine
 
@@ -73,6 +75,8 @@ Generate options
 Create options
       --from <src>       local diffusers folder, or Hugging Face repo (owner/name)
   -q, --quantize <fmt>   ${QUANTIZE_FORMATS.map((f) => f.name).join(' | ')} (omit to keep full precision)
+      --lora <src>[:w]   bake a LoRA in: a .safetensors file or owner/name on Hugging Face, weight w
+                         (default 1); repeat to stack LoRAs
 
 Serve options
   -p, --port <n>         port (default ${DEFAULT_SERVE_PORT})
@@ -102,6 +106,7 @@ function parse(argv: string[]) {
       force: { type: 'boolean' },
       from: { type: 'string' },
       quantize: { type: 'string', short: 'q' },
+      lora: { type: 'string', multiple: true },
       port: { type: 'string', short: 'p' },
       bind: { type: 'string' },
       'api-key': { type: 'string' },
@@ -424,8 +429,30 @@ async function create(name: string, values: Values): Promise<number> {
     ui.bar('Downloading from Hugging Face', p.overallReceived, p.overallTotal, formatBytes),
   );
   ui.clear();
+
+  const loras = [];
+  for (const arg of values.lora ?? []) {
+    const { ref, scale } = parseLoraArg(arg);
+    const file = await resolveLora(ref, (p) => ui.bar('Downloading LoRA', p.overallReceived, p.overallTotal, formatBytes));
+    ui.clear();
+    loras.push({ file, scale });
+  }
+  let dir = source.dir;
+  const merged = join(IMAGINE_HOME, 'merge', name.replace(/[^\w.-]/g, '_'));
+  if (loras.length) {
+    ui.status('Merging LoRA…');
+    const { layers } = await mergeLoras(source.dir, loras, merged, (done, total) => ui.bar('Merging LoRA', done, total));
+    ui.clear();
+    console.error(`Merged ${loras.length} LoRA${loras.length > 1 ? 's' : ''} into ${layers} layers.`);
+    dir = merged;
+  }
+
   console.error(`Creating ${name} from ${source.dir}${quantize ? ` as ${quantize}` : ' at full precision'}…`);
-  await createModel(name, source.dir, quantize, runtimeEvents(ui));
+  try {
+    await createModel(name, dir, quantize, runtimeEvents(ui));
+  } finally {
+    if (loras.length) rmSync(merged, { recursive: true, force: true });
+  }
   ui.clear();
 
   console.log(`Created ${name}. Try: imagine "a lighthouse at dusk" -m ${name}`);

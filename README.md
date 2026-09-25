@@ -153,22 +153,43 @@ FLUX.2 Klein is the tested and recommended family. The Z-Image Turbo models are 
 
 ### Quantize your own
 
-`imagine create` imports a FLUX.2 Klein model in diffusers format, from a local folder or straight from Hugging Face, and can quantize it:
+`imagine create` imports a FLUX.2 Klein model in diffusers format, from a local folder or straight from Hugging Face, and quantizes it:
 
 ```bash
-imagine create klein-4b-int4 --from black-forest-labs/FLUX.2-klein-4B --quantize int4
-imagine "a watercolor fox" -m klein-4b-int4
+imagine create klein-4b --from black-forest-labs/FLUX.2-klein-4B --quantize mxfp8
+imagine "a watercolor fox" -m klein-4b
 ```
 
-| `--quantize` | FLUX.2 Klein 4B | 768×768 on an M5 Pro | |
-|---|---|---|---|
-| `int4` | 5.3 GB | 11.5 s | fastest, same quality as the ready-made 4-bit model |
-| `int8` | 9.0 GB | 15.1 s | near-lossless |
-| *(omitted)* | 16 GB | | full precision (bf16) |
+It supports all five formats Apple's MLX runs natively, including the new microscaling float formats (MXFP4, MXFP8, NVFP4). They run through native quantized matmul kernels, so the weights stay compressed in memory, not just on disk. These are FLUX.2 Klein 4B results at 768×768 on an M5 Pro:
 
-Importing takes about 12 seconds once the files are on disk. The Hugging Face download (16 GB for FLUX.2 Klein 4B) resumes if it's interrupted, and it's kept in `~/.imagine/huggingface` so you can create other variants from it. Only the transformer and text-encoder layers are quantized; the VAE, embeddings and norms stay in full precision. For gated models such as FLUX.2 Klein 9B, accept the licence on Hugging Face and set `HF_TOKEN`.
+| `--quantize` | Size | Time | Difference from `int8` | |
+|---|---|---|---|---|
+| `mxfp8` | 8.8 GB | 10.7 s | 17.8 | **best quality**: closest to full precision, and faster than `int8` |
+| `mxfp4` | 5.0 GB | 10.0 s | 26.3 | **smallest and fastest** |
+| `int8` | 9.0 GB | 12.1 s | reference | near-lossless integer |
+| `int4` | 5.3 GB | 12.8 s | 21.7 | 4-bit integer |
+| `nvfp4` | 5.3 GB | 10.3 s | 37.7 | 4-bit float; drifts the most in our tests |
+| *(omitted)* | 16 GB | | | full precision (bf16) |
 
-Why only `int4` and `int8`? They're the formats this engine has fast quantized kernels for on Apple silicon, so they save memory and time as well as disk. `nvfp4` and `mxfp8` would only shrink the file, and they currently fail to load, so `imagine` refuses them.
+"Difference from `int8`" is the average per-pixel difference out of 255 for the same prompt and seed, so lower means closer. Importing takes 10 to 14 seconds once the files are on disk. The Hugging Face download (16 GB for FLUX.2 Klein 4B) resumes if it's interrupted, and it's kept in `~/.imagine/huggingface` so you can create other variants from it. Only the transformer and text-encoder layers are quantized; the VAE, embeddings and norms stay in full precision. For gated models such as FLUX.2 Klein 9B, accept the licence on Hugging Face and set `HF_TOKEN`.
+
+### Add LoRAs
+
+A LoRA adds a trained style, character, product or skill to a model. `imagine create --lora` bakes one or more LoRAs into the weights before quantizing. They then work with every format, and cost nothing extra per image.
+
+```bash
+imagine create klein-tryon --from black-forest-labs/FLUX.2-klein-4B \
+  --lora xocialize/tryon-FLUX.2-klein-4B-lora --quantize mxfp8
+
+imagine create klein-styled --from black-forest-labs/FLUX.2-klein-4B \
+  --lora ./my-style.safetensors:0.8 --lora ./my-character.safetensors
+```
+
+- **Where LoRAs come from:** a local `.safetensors` file, or Hugging Face as `owner/name`. For a repo with several files, use `owner/name/path/file.safetensors`.
+- **Strength:** set it with `:weight` after the name (the default is 1). Repeat `--lora` to stack them.
+- **Formats:** both common layouts are understood, diffusers/PEFT (`transformer.…lora_A`) and ai-toolkit/BFL (`diffusion_model.double_blocks…`). Fused layers are split onto the model's own layers.
+- **Safety:** a LoRA made for a different model is refused before anything is written, rather than half-applied.
+- **Speed:** merging runs on all your CPU cores. A rank-32 LoRA takes about 26 seconds on FLUX.2 Klein 4B.
 
 ## Benchmark your Mac
 
@@ -302,9 +323,23 @@ imagine (terminal, OpenAI API, MCP)
                    └─ models live in ~/.ollama/models, shared with Ollama
 ```
 
-- **imagine-engine** is Ollama 0.32.5's image engine built from source in this repo ([`engine/`](https://github.com/nitya-afk/imagine/tree/main/engine)) with two fixes. The first is **image editing**: FLUX.2 Klein can edit, but 0.32.5 ignored your input images. The second is **importing and quantizing models**: Ollama removed this, and its last releases that had it crash on current Macs. The engine is downloaded once from this repo's release, checked against a pinned SHA-256, and runs in the background on its own port.
+- **imagine-engine** is Ollama 0.32.5's image engine built from source in this repo ([`engine/`](https://github.com/nitya-afk/imagine/tree/main/engine)) with three fixes:
+  - **Image editing.** FLUX.2 Klein can edit, but 0.32.5 ignored your input images.
+  - **Importing and quantizing models.** Ollama removed this, and its last releases that had it crash on current Macs.
+  - **Native MXFP4, MXFP8 and NVFP4.** These formats used to be expanded at load, or misread.
+
+  The engine is built on GitHub Actions with a signed build provenance attestation, downloaded once from this repo's release, checked against a pinned SHA-256, and runs in the background on its own port.
 - **Your models are shared.** Anything you pulled with Ollama works here, and anything you pull or create here shows up in `ollama list`. Nothing is downloaded twice.
 - **It steps aside when Ollama catches up.** Plain generation tries your own Ollama first. When a version that can make images again ships, `imagine` notices and uses it.
+
+### Verify the engine
+
+Every engine release is built from this repo's source by GitHub Actions ([`engine.yml`](https://github.com/nitya-afk/imagine/blob/main/.github/workflows/engine.yml)) and signed with a build provenance attestation. To check that a download came from that workflow and commit:
+
+```bash
+gh release download v1.3.0 -R nitya-afk/imagine -p 'imagine-engine-*.tar.gz'
+gh attestation verify imagine-engine-*.tar.gz --repo nitya-afk/imagine
+```
 
 ## All commands
 
@@ -315,7 +350,7 @@ imagine again <image.png> [--vary]                   # recreate an image from it
 imagine bench                                        # measure this Mac's speed
 imagine models                                       # models, sizes, and what fits this Mac
 imagine pull [model]                                 # download a model (default x/flux2-klein)
-imagine create <name> --from <src> [--quantize int4|int8]   # import and quantize a model
+imagine create <name> --from <src> [--quantize fmt] [--lora src[:w]]   # import, quantize, add LoRAs
 imagine serve [--port 11436] [--bind …] [--api-key …] [--cors]   # OpenAI-compatible API
 imagine mcp                                          # MCP server for AI assistants
 imagine status                                       # which engine is running, where files go

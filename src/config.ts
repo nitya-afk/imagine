@@ -5,14 +5,14 @@ import { join } from 'node:path';
  * imagine-engine: Ollama 0.32.5 (the last release with image generation) built from source with
  * the patches in engine/patches, attached to this repo's GitHub release. engine/build.sh reproduces it.
  */
-export const ENGINE_VERSION = '0.32.5-imagine.1';
+export const ENGINE_VERSION = '0.32.5-imagine.2';
 /** The GitHub release that carries this engine build. */
-const ENGINE_RELEASE = 'v1.0.0';
+const ENGINE_RELEASE = 'v1.3.0';
 export const ENGINE_URL =
   process.env.IMAGINE_ENGINE_URL ??
   `https://github.com/nitya-afk/imagine/releases/download/${ENGINE_RELEASE}/imagine-engine-${ENGINE_VERSION}-darwin-arm64.tar.gz`;
 export const ENGINE_SHA256 =
-  process.env.IMAGINE_ENGINE_SHA256 ?? '4b658fe5d3f679dafc305003a93b3de1953804ac134f9c36d6780cfcc8c747b9';
+  process.env.IMAGINE_ENGINE_SHA256 ?? 'fd311e71150a5fea6dc41a30fd4615109a60c95da418efd061cd1203ecfd0528';
 
 export const DEFAULT_MODEL = process.env.IMAGINE_MODEL ?? 'x/flux2-klein';
 export const DEFAULT_SIZE = '1024x1024';
@@ -49,12 +49,14 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
   { name: 'x/z-image-turbo:bf16', size: 32.85e9, license: 'Apache-2.0', edits: false },
 ];
 
-
 /**
- * Formats `imagine create --quantize` writes. The engine runs these with quantized-matmul kernels,
- * so they cut memory as well as disk. (NVFP4/MXFP8 have no kernels in this engine.)
+ * Formats `imagine create --quantize` writes, best first. All five run with MLX's native quantized
+ * matmul, so weights stay small in memory too. Measured on FLUX.2 Klein 4B, M5 Pro, 768×768.
  */
 export const QUANTIZE_FORMATS = [
-  { name: 'int4', bits: 4, note: '4-bit, about a third of bf16. The fastest option' },
-  { name: 'int8', bits: 8, note: '8-bit, near-lossless at about half of bf16' },
+  { name: 'mxfp8', bits: 8, note: 'best quality, closest to full precision (8.8 GB, 10.7 s)' },
+  { name: 'mxfp4', bits: 4, note: 'smallest and fastest (5.0 GB, 10.0 s)' },
+  { name: 'int8', bits: 8, note: 'near-lossless integer (9.0 GB, 12.1 s)' },
+  { name: 'int4', bits: 4, note: '4-bit integer (5.3 GB, 12.8 s)' },
+  { name: 'nvfp4', bits: 4, note: '4-bit float, drifts most from full precision (5.3 GB, 10.3 s)' },
 ] as const;
