@@ -18,8 +18,22 @@ imagine "make it night time with a full moon, keep the cat" -i cat.png
 
 All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Klein 4B.
 
+## What it can do
+
+- **Generate images from text** with FLUX.2 Klein, fully offline, on any Apple silicon Mac.
+- **Edit photos with words**, such as "make it night" or "turn it into a watercolor", using up to 4 reference images.
+- **Write better prompts for you** (`--enhance`), using a local chat model.
+- **Reproduce any image**: every PNG remembers its prompt, seed and model (`imagine again`).
+- **Quantize models** to MXFP8, MXFP4, INT8, INT4 or NVFP4, all running on native Apple silicon kernels.
+- **Add LoRAs**: bake trained styles, characters or skills into a model.
+- **Plug into apps and AI assistants** through an OpenAI-compatible API and an MCP server.
+- **Benchmark your Mac** and share the result.
+
+![imagine in the terminal: an enhanced prompt and a benchmark](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/terminal.png)
+
 ## Contents
 
+- [What it can do](#what-it-can-do)
 - [Quick start](#quick-start)
 - [Generate and edit](#generate-and-edit)
 - [Better prompts, reproducible images](#better-prompts-reproducible-images)
@@ -110,6 +124,8 @@ imagine "a cat astronaut" --enhance
 # helmet. The cat is floating inside a futuristic spaceship cabin with glowing control panels…
 ```
 
+![The same seed with and without --enhance](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/enhance.jpg)
+
 `--enhance` needs Ollama running with a chat model, for example `ollama pull gemma4:12b`. It picks the largest one that loads comfortably, or you can set `IMAGINE_ENHANCE_MODEL`.
 
 **Every image remembers how it was made.** The prompt, seed, model, size and steps are saved inside each PNG, along with your original idea when you used `--enhance`. Other image tools can read them too (the `parameters` field). Recreate or riff on any image:
@@ -171,6 +187,8 @@ It supports all five formats Apple's MLX runs natively, including the new micros
 | `nvfp4` | 5.3 GB | 10.3 s | 37.7 | 4-bit float; drifts the most in our tests |
 | *(omitted)* | 16 GB | | | full precision (bf16) |
 
+![The same prompt and seed in all five formats](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/quantization.jpg)
+
 "Difference from `int8`" is the average per-pixel difference out of 255 for the same prompt and seed, so lower means closer. Importing takes 10 to 14 seconds once the files are on disk. The Hugging Face download (16 GB for FLUX.2 Klein 4B) resumes if it's interrupted, and it's kept in `~/.imagine/huggingface` so you can create other variants from it. Only the transformer and text-encoder layers are quantized; the VAE, embeddings and norms stay in full precision. For gated models such as FLUX.2 Klein 9B, accept the licence on Hugging Face and set `HF_TOKEN`.
 
 ### Add LoRAs
@@ -184,6 +202,10 @@ imagine create klein-tryon --from black-forest-labs/FLUX.2-klein-4B \
 imagine create klein-styled --from black-forest-labs/FLUX.2-klein-4B \
   --lora ./my-style.safetensors:0.8 --lora ./my-character.safetensors
 ```
+
+![Virtual try-on with a LoRA: a person, a jacket and trousers in, the person wearing them out](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/lora-tryon.jpg)
+
+*Made with the [try-on LoRA](https://huggingface.co/xocialize/tryon-FLUX.2-klein-4B-lora): the person, top and bottom go in as references, and the result keeps the person's face and pose.*
 
 - **Where LoRAs come from:** a local `.safetensors` file, or Hugging Face as `owner/name`. For a repo with several files, use `owner/name/path/file.safetensors`.
 - **Strength:** set it with `:weight` after the name (the default is 1). Repeat `--lora` to stack them.
