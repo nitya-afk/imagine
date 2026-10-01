@@ -28,6 +28,27 @@ export const LOG_FILE = join(IMAGINE_HOME, 'engine.log');
 export const STATE_FILE = join(IMAGINE_HOME, 'state.json');
 export const HF_CACHE_DIR = join(IMAGINE_HOME, 'huggingface');
 
+/** stable-diffusion.cpp is a second backend for GGUF image models that Ollama cannot load. */
+export const SD_CPP_VERSION = 'master-918-39ada08';
+export const SD_CPP_DIR = join(IMAGINE_HOME, 'stable-diffusion.cpp', SD_CPP_VERSION);
+export const SD_CPP_BIN = process.env.IMAGINE_SD_BIN ?? join(SD_CPP_DIR, 'sd-cli');
+export const SD_CPP_URL =
+  'https://github.com/leejet/stable-diffusion.cpp/releases/download/master-918-39ada08/' +
+  'sd-master-39ada08-bin-Darwin-macOS-26.6.2-arm64.zip';
+export const SD_CPP_SHA256 = '544c64c82c83d95d778709423902918d23230f1b33050e86518b97cfe54eabc1';
+
+export const QWEN_MODEL = 'qwen-image-2.1-uncensored:q6_k';
+export const QWEN_SIZE = 12.33e9;
+export const QWEN_REPO = 'abenzerps/Qwen-Image-2.1-Uncensored-GGUF';
+export const QWEN_TEXT_REPO = 'Qwen/Qwen3-VL-8B-Instruct-GGUF';
+export const QWEN_FILES = {
+  diffusion: 'qwen-image-2.1-UC-Q6_K.gguf',
+  textEncoder: 'Qwen3VL-8B-Instruct-Q4_K_M.gguf',
+  vision: 'mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf',
+  vae: 'vae/qwen_image_2.1_vae_bf16.safetensors',
+} as const;
+export const QWEN_DIR = join(HF_CACHE_DIR, ...QWEN_REPO.split('/'));
+
 export const OUTPUT_DIR = process.env.IMAGINE_OUTPUT_DIR ?? join(homedir(), 'Pictures', 'imagine');
 
 export interface KnownModel {
@@ -38,7 +59,7 @@ export interface KnownModel {
   edits: boolean;
 }
 
-/** Image models in the Ollama library. `latest` tags are aliases of the smallest variant. */
+/** Models imagine knows how to install. `latest` tags are aliases of the smallest variant. */
 export const KNOWN_MODELS: readonly KnownModel[] = [
   { name: 'x/flux2-klein:4b-fp4', size: 5.73e9, license: 'Apache-2.0', edits: true },
   { name: 'x/flux2-klein:4b-fp8', size: 9.45e9, license: 'Apache-2.0', edits: true },
@@ -48,6 +69,8 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
   { name: 'x/flux2-klein:9b-bf16', size: 34.72e9, license: 'non-commercial', edits: true },
   { name: 'x/z-image-turbo:fp8', size: 12.77e9, license: 'Apache-2.0', edits: false },
   { name: 'x/z-image-turbo:bf16', size: 32.85e9, license: 'Apache-2.0', edits: false },
+  // Transformer + Q4 Qwen3-VL text encoder + vision projector + VAE, through stable-diffusion.cpp.
+  { name: QWEN_MODEL, size: QWEN_SIZE, license: 'Qwen Research', edits: true },
 ];
 
 /**

@@ -132,8 +132,9 @@ export async function downloadVerified(
 }
 
 /**
- * Download a verified .tar.gz and unpack it to `dest`, taking `root` (a folder inside the archive)
- * when given. The download survives interruptions; `dest` only appears once everything is in place.
+ * Download a verified archive and unpack it to `dest`, taking `root` (a folder inside the archive)
+ * when given. macOS bsdtar detects both tar.gz and zip. The download survives interruptions;
+ * `dest` only appears once everything is in place.
  */
 export async function installArchive(opts: {
   url: string;

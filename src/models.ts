@@ -8,6 +8,9 @@ const ALIASES: Record<string, string> = {
   'x/flux2-klein:4b': 'x/flux2-klein:4b-fp4',
   'x/flux2-klein:9b': 'x/flux2-klein:9b-fp4',
   'x/z-image-turbo:latest': 'x/z-image-turbo:fp8',
+  'qwen-image-2.1-uncensored:latest': 'qwen-image-2.1-uncensored:q6_k',
+  // Transparently migrate commands and saved settings from the previous bundled quantization.
+  'qwen-image-2.1-uncensored:q4_k_m': 'qwen-image-2.1-uncensored:q6_k',
 };
 
 export function withTag(name: string): string {

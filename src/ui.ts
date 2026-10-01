@@ -7,6 +7,9 @@ import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, sta
 import { writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { basename, join } from 'node:path';
+import { assistantModels, LocalAssistant, MemoryStore, type ChatMessage } from './assistant.ts';
+import { WhatsAppBridge } from './whatsapp.ts';
+import { normalizeHost } from './host.ts';
 import { describeStep, runEdit, stepsFromFlags } from './edit.ts';
 import { enhanceIdea } from './enhance.ts';
 import type { Generate } from './generator.ts';
@@ -22,6 +25,10 @@ export interface UiDeps {
   listImageModels: () => Promise<string[]>;
   /** Defaults to the real prompt enhancer; tests replace it. */
   enhance?: (idea: string, onStatus: (message: string) => void) => Promise<string>;
+  /** Tests can supply a local assistant without starting Ollama. */
+  assistant?: (options: { model: string; deep: boolean; web: boolean; workers: boolean; projectFiles: boolean; computer: boolean; whatsapp: boolean }) => Pick<LocalAssistant, 'run'>;
+  assistantModels?: typeof assistantModels;
+  assistantMemory?: MemoryStore;
 }
 
 type Event = Record<string, unknown> & { type: string };
@@ -44,6 +51,21 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     .replaceAll('__IMAGINE_VERSION__', deps.version)
     .replaceAll('__IMAGINE_MODEL__', deps.defaultModel);
   const enhance = deps.enhance ?? enhanceIdea;
+  const memory = deps.assistantMemory ?? new MemoryStore();
+  const whatsapp = new WhatsAppBridge();
+  const closeWhatsApp = () => { void whatsapp.stop().catch(() => {}); };
+  const approvals = new Map<string, (allowed: boolean) => void>();
+  const usedAssistantModels = new Set<string>();
+  const releaseAssistantModels = async () => {
+    for (const model of usedAssistantModels) {
+      await fetch(`${normalizeHost(process.env.OLLAMA_HOST)}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model, messages: [], stream: false, keep_alive: 0 }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => undefined);
+    }
+    usedAssistantModels.clear();
+  };
 
   // One GPU job at a time; the others wait their turn.
   let queue: Promise<unknown> = Promise.resolve();
@@ -64,6 +86,7 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
       res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Something went wrong.' }));
     });
   });
+  server.on('close', closeWhatsApp);
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // A page on another site can't reach us through DNS tricks: the Host must be this machine.
@@ -87,6 +110,26 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
       return json(res, { models: await deps.listImageModels(), defaultModel: deps.defaultModel });
     }
     if (req.method === 'GET' && path === '/api/gallery') return json(res, { images: gallery() });
+    if (req.method === 'GET' && path === '/api/assistant/models') return json(res, await (deps.assistantModels ?? assistantModels)());
+    if (req.method === 'GET' && path === '/api/assistant/memory') return json(res, { memories: memory.list() });
+    if (req.method === 'GET' && path === '/api/assistant/whatsapp') return json(res, whatsapp.status());
+    if (req.method === 'POST' && path === '/api/assistant/whatsapp/connect') {
+      await whatsapp.connect();
+      return json(res, whatsapp.status());
+    }
+    if (req.method === 'POST' && path === '/api/assistant/approve') {
+      const raw = (await readBody(req, MAX_JSON)).toString('utf8');
+      const body = invalid(() => JSON.parse(raw || '{}') as { id?: string; allow?: boolean });
+      const resolve = approvals.get(String(body.id ?? ''));
+      if (!resolve) throw new HttpError(404, 'Approval request expired.');
+      approvals.delete(String(body.id));
+      resolve(body.allow === true);
+      return json(res, { ok: true });
+    }
+    if (req.method === 'DELETE' && path.startsWith('/api/assistant/memory/')) {
+      return json(res, { deleted: memory.remove(decodeURIComponent(path.slice('/api/assistant/memory/'.length))) });
+    }
+    if (req.method === 'POST' && path === '/api/assistant/chat') return assistantChat(req, res);
     if (req.method === 'DELETE' && path === '/api/gallery') return json(res, { deleted: deleteAll() });
     if (req.method === 'DELETE' && path.startsWith('/api/images/')) {
       unlinkSync(galleryFile(decodeURIComponent(path.slice(12))));
@@ -97,6 +140,40 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     throw new HttpError(404, 'Not found.');
   }
 
+  async function assistantChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const raw = (await readBody(req, MAX_JSON)).toString('utf8');
+    const body = invalid(() => JSON.parse(raw || '{}') as Record<string, unknown>);
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    if (!prompt) throw new HttpError(400, 'Write a message first.');
+    const model = typeof body.model === 'string' && body.model ? body.model : 'qwen3.5:4b';
+    const deep = body.deep === true;
+    const web = body.web !== false;
+    const workers = body.workers === true;
+    const projectFiles = body.projectFiles === true;
+    const computer = body.computer === true;
+    const useWhatsApp = body.whatsapp === true;
+    const history = Array.isArray(body.history) ? body.history.slice(-12) as ChatMessage[] : [];
+    const send = stream(res);
+    const approve = (description: string) => new Promise<boolean>((resolve) => {
+      const id = randomBytes(16).toString('hex');
+      const timer = setTimeout(() => { approvals.delete(id); resolve(false); }, 60_000);
+      approvals.set(id, (allowed) => { clearTimeout(timer); resolve(allowed); });
+      send({ type: 'approval', id, description });
+    });
+    const assistant = deps.assistant?.({ model, deep, web, workers, projectFiles, computer, whatsapp: useWhatsApp }) ?? new LocalAssistant({ model, deep, web, workers, projectFiles, computer, whatsapp: useWhatsApp ? whatsapp : undefined, approve, memory });
+    usedAssistantModels.add(model);
+    await enqueue(async () => {
+      try {
+        const answer = await assistant.run(prompt, history, send);
+        send({ type: 'answer', content: answer });
+        send({ type: 'done' });
+      } catch (err) {
+        send({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      }
+      res.end();
+    }, () => send({ type: 'status', message: 'Waiting for the current local model job…' }));
+  }
+
   async function generate(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const text = (await readBody(req, MAX_JSON)).toString('utf8');
     const body = invalid(() => JSON.parse(text || '{}') as Record<string, unknown>);
@@ -104,6 +181,8 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     if (!idea) throw new HttpError(400, 'Describe the image you want.');
     const { width, height } = invalid(() => parseSize(typeof body.size === 'string' ? body.size : '1024x1024'));
     const count = invalid(() => parseIntInRange(Number(body.count ?? 1), 'count', 1, 4));
+    const steps = body.steps === undefined ? undefined : invalid(() => parseIntInRange(Number(body.steps), 'steps', 1, 100));
+    const cache = body.cache === true;
     const firstSeed = body.seed ? invalid(() => parseIntInRange(Number(body.seed), 'seed', 1, MAX_SEED)) : undefined;
     const model = typeof body.model === 'string' && body.model ? body.model : deps.defaultModel;
 
@@ -111,6 +190,7 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     await enqueue(
       async () => {
         try {
+          await releaseAssistantModels();
           const prompt = body.enhance ? await enhance(idea, (message) => send({ type: 'status', message })) : idea;
           if (body.enhance) send({ type: 'prompt', prompt });
           for (let i = 0; i < count; i++) {
@@ -118,7 +198,7 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
             const label = count > 1 ? `Image ${i + 1} of ${count}` : 'Generating';
             send({ type: 'status', message: `${label}…` });
             const png = await deps.generate(
-              { model, prompt, width, height, seed },
+              { model, prompt, width, height, steps, cache, seed },
               (p) => send({ type: 'progress', label, completed: p.completed, total: p.total }),
               body.enhance ? idea : undefined,
             );
@@ -166,6 +246,7 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     await enqueue(
       async () => {
         try {
+          await releaseAssistantModels();
           const result = await runEdit({
             photo: await prepareImage(photo!, 'the photo', { png: true }),
             face: face ? await prepareImage(face, 'the face photo') : undefined,

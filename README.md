@@ -1,6 +1,8 @@
 # imagine
 
-**Generate and edit images on your Mac, fully offline.** It uses FLUX.2 Klein image models on Apple silicon, from the terminal, from any app that speaks the OpenAI API, or from AI assistants over MCP. Nothing is uploaded anywhere.
+**Generate and edit images on your Mac, fully offline.** It uses FLUX.2 Klein image models on Apple silicon, from the terminal, from any app that speaks the OpenAI API, or from AI assistants over MCP. Image generation uploads nothing. The optional Assist tab can use internet search and WhatsApp when you enable those features.
+
+The browser opens with three clear paths: **Create** images, **Edit** photos, or **Assist** with a local language model. The first screen also points to the terminal, image API, MCP, model import and LoRA features.
 
 ```bash
 imagine "a cat blasting off from the sun, cinematic"
@@ -21,8 +23,9 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 ## What it can do
 
 - **Generate images from text** with FLUX.2 Klein, fully offline, on any Apple silicon Mac.
-- **Run Qwen-Image 2.1 GGUF locally** through a Metal-native backend, including the uncensored Q4_K_M variant.
+- **Run Qwen-Image 2.1 GGUF locally** through a Metal-native backend, including the higher-quality uncensored Q6_K variant.
 - **Use it in your browser** (`imagine ui`): create, upload a photo and edit it, compare before and after, and keep editing.
+- **Use a local assistant** in the Assist tab: reasoning, writing, coding help, optional web lookup, persistent local memory, and bounded workers. Computer control and WhatsApp are opt-in.
 - **Edit photos like an editor**: remove or add things, change the background, change or swap faces, restyle, and extend the scene. Describe it in plain English and a local model plans the steps and checks each result.
 - **Write better prompts for you** (`--enhance`), using a local chat model.
 - **Reproduce any image**: every PNG remembers its prompt, seed and model (`imagine again`).
@@ -30,6 +33,8 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 - **Add LoRAs**: bake trained styles, characters or skills into a model.
 - **Plug into apps and AI assistants** through an OpenAI-compatible API and an MCP server.
 - **Benchmark your Mac** and share the result.
+
+For a task-by-task tour of the assistant, its permissions and its limits, see the [Assist guide](docs/ASSIST.md).
 
 ![imagine in the terminal: an enhanced prompt and a benchmark](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/terminal.png)
 
@@ -40,6 +45,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 - [Generate and edit](#generate-and-edit)
 - [Edit photos](#edit-photos)
 - [Use it in your browser](#use-it-in-your-browser)
+- [Local assistant](#local-assistant)
 - [Better prompts, reproducible images](#better-prompts-reproducible-images)
 - [Models and quantization](#models-and-quantization)
 - [Benchmark your Mac](#benchmark-your-mac)
@@ -72,6 +78,16 @@ npm install -g https://github.com/nitya-afk/imagine/releases/latest/download/ima
 ```
 
 This gives you the `imagine` command. It always installs the latest release. If npm reports `EACCES`, your Node install needs admin rights for global packages: run the same command with `sudo`, or switch to Homebrew's Node.
+
+This README documents the current `main` branch. The v1.6.1 packaged release predates the Qwen GGUF and Assist additions. Until a newer release is published, use a source checkout for those features:
+
+```bash
+git clone https://github.com/nitya-afk/imagine.git
+cd imagine
+npm ci
+npm run build
+npm link
+```
 
 **4. Download the image model** (FLUX.2 Klein 4B, 5.7 GB, one time):
 
@@ -167,6 +183,7 @@ imagine ui
 
 ![imagine ui: two images from one prompt, and the contact sheet of recent images](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/ui-create.jpg)
 
+- **First screen**: choose Create, Edit or Assist from a three-card overview, with a short description of each and links to the other ways to use Imagine.
 - **Create**: write a prompt, pick a frame (square, portrait, landscape, wide), make up to four at once, and optionally let a local model enhance the prompt.
 - **Edit**: drop in a photo (or paste one, or pick one you made), say what should change, and watch each planned step run. Quick buttons start a remove, add, background, face or style edit. You can also extend the frame to 16:9, 4:3, 1:1 or 9:16, or swap in a face from a second photo.
 - **Before and after**: drag the slider to compare, then **Keep editing** to carry on from the result.
@@ -176,6 +193,33 @@ imagine ui
 ![imagine ui: before and after of a background change](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/ui-edit.jpg)
 
 It runs on this Mac only. It listens on `127.0.0.1:11437` (change it with `--port`), and every request needs a token that's baked into the page when it opens, so other websites can't use it. Images are saved to the same folder as the command line's. Use `--no-open` to start it without opening the browser. Jobs run one at a time; a second one waits its turn.
+
+## Local assistant
+
+Install [Ollama](https://ollama.com/download), then download the small local language model and open Imagine:
+
+```bash
+ollama pull qwen3.5:4b
+imagine ui
+```
+
+Choose **Assist**. Qwen 3.5 4B is about 3.4 GB on disk and is the default for 8 GB Macs; on a 16 GB or larger Mac, `ollama pull qwen3.5:9b` adds a stronger 6.6 GB option. The app only lists installed chat models that leave reasonable memory headroom. Deep reasoning is optional because it takes longer. The assistant uses an 8K working context to avoid overloading smaller machines; the advertised maximum context of a model is not a promise that it fits in 8 GB RAM.
+
+Image and assistant jobs share one queue. On 8–16 GB Macs, Imagine unloads the chat model after each answer so the image model has memory available; the next assistant question will take a little longer to start.
+Before an image job, Imagine also asks Ollama to release any chat model used in the current UI session, including on larger Macs.
+
+For a community variant trained to refuse fewer prompts, install `ollama pull huihui_ai/qwen3.5-abliterated:4b` and select **less-filtered** in the model picker. It is optional: the official model remains the default because the community tuning has not been shown to improve reasoning or coding accuracy.
+
+- **Internet lookup** can search Wikipedia and read public HTTPS pages without an account. For broad, current web search, set `BRAVE_SEARCH_API_KEY` before starting Imagine; otherwise obscure or breaking news may require you to give it a URL. Turn the option off for fully offline use.
+- **Memory** saves facts only when you ask it to remember them. Facts are stored in `~/.imagine/assistant-memory.json`; you can view and remove them in the Assist tab. Chat history lasts for the current page session.
+- **Specialist workers** are optional and run sequentially through the same model to conserve unified memory.
+- **Project files** are read-only and off by default. Enable them to let the assistant inspect files under the folder where you started `imagine ui`; symlinks cannot escape that folder.
+- **Computer control** is off by default. Turn it on to allow screen viewing, app opening, clicks, typing and key presses; the browser asks for approval before every action. macOS may ask for Accessibility and Screen Recording permissions. There is no arbitrary shell-command tool.
+- **WhatsApp** uses the unofficial Baileys library. Click **Connect WhatsApp** and scan the QR code in WhatsApp → Linked devices. The session keys stay in `~/.imagine/whatsapp-auth/`. Received text messages are available only after you enable WhatsApp access. Every outgoing message needs your approval; there are no automatic replies, group broadcasts or bulk sends. Baileys is not affiliated with WhatsApp and may stop working if WhatsApp changes its protocol.
+
+Model capabilities and refusal behavior come from the model itself; a small local model cannot honestly be guaranteed to be “unrestricted” or to match a frontier model at reasoning. This integration uses the released model weights without fine-tuning. Tool use, memory and computer access are application features, not changes to the weights; fine-tuning would need a defined dataset and separate evaluation.
+
+The Assist tab is not an unattended computer agent: it cannot run arbitrary shell commands or edit project files, and each computer action and outgoing WhatsApp message needs approval. See [the full Assist guide](docs/ASSIST.md) for example requests, setup and data locations.
 
 ## Better prompts, reproducible images
 
@@ -232,10 +276,10 @@ FLUX.2 Klein is the tested and recommended family. The Z-Image Turbo models are 
 
 ### Qwen-Image 2.1 Uncensored (GGUF)
 
-The Q4_K_M build from `abenzerps/Qwen-Image-2.1-Uncensored-GGUF` runs through a bundled
+The Q6_K build from `abenzerps/Qwen-Image-2.1-Uncensored-GGUF` runs through a bundled
 `stable-diffusion.cpp` Metal backend. It is separate from the Ollama-compatible engine used for
-FLUX.2 and Z-Image. The one-time pull downloads the 4.6 GB transformer, Qwen's 5.0 GB Q4 text
-encoder, 752 MB vision projector, 676 MB VAE and a 35 MB runtime (about 11.1 GB total):
+FLUX.2 and Z-Image. The one-time pull downloads the 5.9 GB transformer, Qwen's 5.0 GB Q4 text
+encoder, 752 MB vision projector, 676 MB VAE and a 35 MB runtime (about 12.3 GB total):
 
 ```bash
 imagine pull qwen-image-2.1-uncensored
@@ -243,9 +287,18 @@ imagine "a cinematic portrait with a neon sign reading LOCAL" -m qwen-image-2.1-
 ```
 
 Qwen uses 25 steps by default in imagine; pass `--steps` to change it. Width and height must be
-divisible by 32. A 24 GB Mac can run this Q4/INT8 combination, but close other memory-heavy apps
+divisible by 32. A 24 GB Mac can run this quantized combination, but close other memory-heavy apps
 first. The model is under the Qwen Research License, and this particular checkpoint has no built-in
 safety checker; you are responsible for lawful and consensual use.
+
+On Macs with enough unified memory, imagine keeps the Q6 weights directly on Metal instead of
+streaming them from CPU memory. This preserves the exact output settings while reducing generation
+time by about 20% in the local M5 Pro test.
+
+The browser UI offers three Qwen profiles. **Fast** uses 512 px and 20 steps with selective
+transformer caching. **Balanced** uses about 640 px and the same 20-step schedule (about 2.5 minutes
+on an M5 Pro). **Quality** keeps the original exact 1024 px, 25-step path. Tests below 20 steps leave
+this base model visibly underdeveloped.
 
 ### Quantize your own
 
@@ -456,7 +509,7 @@ imagine bench                                        # measure this Mac's speed
 imagine models                                       # models, sizes, and what fits this Mac
 imagine pull [model]                                 # download a model (default x/flux2-klein)
 imagine create <name> --from <src> [--quantize fmt] [--lora src[:w]]   # import, quantize, add LoRAs
-imagine ui [--port 11437] [--no-open]           # the browser app: create and edit with uploads
+imagine ui [--port 11437] [--no-open]           # the browser app: create, edit and local assistant
 imagine serve [--port 11436] [--bind …] [--api-key …] [--cors]   # OpenAI-compatible API
 imagine mcp                                          # MCP server for AI assistants
 imagine status                                       # which engine is running, where files go
@@ -479,6 +532,7 @@ imagine --help                                       # every option
 | `HF_TOKEN` | | for gated Hugging Face models |
 | `OLLAMA_HOST` | `127.0.0.1:11434` | your normal Ollama, read the same way Ollama reads it |
 | `OLLAMA_MODELS` | `~/.ollama/models` | the model folder shared with Ollama |
+| `BRAVE_SEARCH_API_KEY` | | optional broad web search for the assistant; without it, Wikipedia search is used |
 
 ## Update and uninstall
 

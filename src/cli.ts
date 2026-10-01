@@ -19,7 +19,10 @@ import {
   KNOWN_MODELS,
   LOG_FILE,
   OUTPUT_DIR,
+  QWEN_MODEL,
+  QWEN_SIZE,
   QUANTIZE_FORMATS,
+  SD_CPP_BIN,
 } from './config.ts';
 import { createModel, parseQuantize, resolveLora, resolveSource } from './create.ts';
 import { describeStep, runEdit, stepsFromFlags } from './edit.ts';
@@ -33,6 +36,7 @@ import { canonicalModel, formatBytes, memoryFit, normalizeModelName } from './mo
 import { getVersion, listModels, pullModel } from './ollama.ts';
 import { imageFileName, MAX_SEED, parseIntInRange, parseSize, randomSeed } from './options.ts';
 import { readMetadata } from './png.ts';
+import { isQwenInstalled, isQwenModel, isSdCppInstalled, pullQwenModel } from './qwen.ts';
 import { engineHost, isEngineInstalled, stopEngine, type RuntimeEvents } from './runtime.ts';
 import { createImageServer } from './server.ts';
 import { createUiServer } from './ui.ts';
@@ -343,7 +347,9 @@ async function bench(values: Values): Promise<number> {
 
 async function listImageModels(events: RuntimeEvents): Promise<string[]> {
   const models = await listModels(await resolveImageHost(defaultDeps(events)));
-  return models.filter((m) => m.capabilities.includes('image')).map((m) => m.name);
+  const names = models.filter((m) => m.capabilities.includes('image')).map((m) => m.name);
+  if (isQwenInstalled()) names.push(QWEN_MODEL);
+  return names;
 }
 
 async function serve(values: Values): Promise<number> {
@@ -440,17 +446,18 @@ async function models(): Promise<number> {
   const host = await resolveImageHost(defaultDeps(runtimeEvents(ui)));
   ui.clear();
   const installed = (await listModels(host)).filter((m) => m.capabilities.includes('image'));
+  if (isQwenInstalled()) installed.push({ name: QWEN_MODEL, size: QWEN_SIZE, capabilities: ['image'] });
   const installedAs = new Map(installed.map((m) => [canonicalModel(m.name), m.name]));
   const ram = totalmem();
 
   console.log(`This Mac has ${Math.round(ram / 2 ** 30)} GB of memory.\n`);
-  console.log(`  ${'MODEL'.padEnd(24)}${'SIZE'.padEnd(10)}${'MEMORY'.padEnd(10)}${'LICENCE'.padEnd(16)}EDITS`);
+  console.log(`  ${'MODEL'.padEnd(42)}${'SIZE'.padEnd(10)}${'MEMORY'.padEnd(10)}${'LICENCE'.padEnd(16)}EDITS`);
   for (const m of KNOWN_MODELS) {
     const have = installedAs.get(m.name);
     const mark = have ? '●' : ' ';
     const alias = have && have !== m.name ? `  (installed as ${have})` : have ? '  (installed)' : '';
     console.log(
-      `${mark} ${m.name.padEnd(24)}${formatBytes(m.size).padEnd(10)}${memoryFit(m.size, ram).padEnd(10)}` +
+      `${mark} ${m.name.padEnd(42)}${formatBytes(m.size).padEnd(10)}${memoryFit(m.size, ram).padEnd(10)}` +
         `${m.license.padEnd(16)}${m.edits ? 'yes' : 'no'}${alias}`,
     );
   }
@@ -459,7 +466,7 @@ async function models(): Promise<number> {
   if (others.length) {
     console.log('\nYour own models');
     for (const m of others) {
-      console.log(`● ${m.name.padEnd(24)}${formatBytes(m.size).padEnd(10)}${memoryFit(m.size, ram)}`);
+      console.log(`● ${m.name.padEnd(42)}${formatBytes(m.size).padEnd(10)}${memoryFit(m.size, ram)}`);
     }
   }
   console.log('\n● installed · pull with: imagine pull flux2-klein:4b-fp8');
@@ -477,6 +484,15 @@ async function pull(name: string, values: Values): Promise<number> {
   }
 
   const ui = createProgress();
+  if (isQwenModel(model)) {
+    await pullQwenModel(
+      (p) => ui.bar('Downloading Qwen-Image 2.1', p.overallReceived, p.overallTotal, formatBytes),
+      runtimeEvents(ui),
+    );
+    ui.clear();
+    console.log(`Pulled ${QWEN_MODEL}`);
+    return 0;
+  }
   const host = await resolveImageHost(defaultDeps(runtimeEvents(ui)));
   await pullModel(host, model, (p) => {
     if (p.total && p.completed !== undefined) ui.bar(`Pulling ${model}`, p.completed, p.total, formatBytes);
@@ -545,6 +561,8 @@ async function status(): Promise<number> {
     `Image engine     ${ENGINE_VERSION}, ${isEngineInstalled() ? 'installed' : 'not installed yet'}, ` +
       `${engineVersion ? `running at ${engineHost()}${engineVersion === ENGINE_VERSION ? '' : ` (found ${engineVersion})`}` : 'stopped'}`,
   );
+  console.log(`Qwen backend     ${isSdCppInstalled() ? `installed at ${SD_CPP_BIN}` : 'not installed yet'}`);
+  console.log(`Qwen model       ${isQwenInstalled() ? `${QWEN_MODEL}, installed` : 'not installed yet'}`);
   if (deps.overrideHost) console.log(`Override         IMAGINE_OLLAMA_HOST=${deps.overrideHost}`);
   console.log(`Images saved to  ${OUTPUT_DIR}`);
   console.log(`Downloads        ${HF_CACHE_DIR}`);

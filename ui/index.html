@@ -155,6 +155,27 @@
   .empty h1 { font: italic 400 46px/1.05 var(--serif); margin: 0 0 14px; letter-spacing: -0.02em; }
   .empty h1 em { color: var(--amber); }
   .empty p { color: var(--ink-2); margin: 0; }
+  .home { width: min(930px, 100%); max-height: 100%; overflow-y: auto; padding: 12px 4px; animation: rise .7s ease both; }
+  .home .edge { color: var(--amber); margin-bottom: 12px; }
+  .home h1 { font: italic 400 clamp(34px, 4vw, 54px)/1.04 var(--serif); letter-spacing: -.035em; margin: 0 0 10px; }
+  .home h1 em { color: var(--amber); }
+  .home > p { color: var(--ink-2); margin: 0 0 28px; }
+  .home-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .home-card {
+    min-height: 190px; padding: 19px 20px; text-align: left; cursor: pointer;
+    display: flex; flex-direction: column; align-items: flex-start;
+    border: 1px solid var(--line-strong); border-top: 2px solid var(--amber);
+    border-radius: 3px 3px var(--r) var(--r); background: linear-gradient(155deg, rgba(242,140,40,.07), var(--panel) 55%);
+    transition: transform .2s, border-color .2s, background .2s;
+  }
+  .home-card:hover { transform: translateY(-3px); border-color: rgba(242,140,40,.5); background: var(--raise); }
+  .home-card .number { font: 11px var(--mono); color: var(--amber); letter-spacing: .16em; }
+  .home-card strong { display: block; margin: 15px 0 6px; font: italic 400 26px/1 var(--serif); }
+  .home-card .detail { color: var(--ink-2); font-size: 13px; line-height: 1.4; }
+  .home-card .entry { margin-top: auto; padding-top: 18px; font: 11px var(--mono); color: var(--amber-hot); letter-spacing: .08em; text-transform: uppercase; }
+  .home-more { display: flex; gap: 12px 18px; flex-wrap: wrap; align-items: center; border-top: 1px solid var(--line); margin-top: 22px; padding-top: 14px; color: var(--ink-3); font: 11px/1.6 var(--mono); }
+  .home-more a { color: var(--amber-hot); text-decoration: none; }
+  .home-more a:hover { text-decoration: underline; }
   .developing { width: min(560px, 90%); animation: rise .5s ease both; }
   .developing .edge { display: flex; justify-content: space-between; margin-bottom: 12px; }
   .bar { height: 3px; background: var(--raise); border-radius: 3px; overflow: hidden; }
@@ -230,6 +251,36 @@
   .film img { height: 78px; display: block; }
   .film .none { color: var(--ink-3); font: 12px var(--mono); padding: 28px 8px; }
 
+  /* Assistant: a quiet research desk beside the darkroom, not a second app. */
+  #assistant-stage { display: flex; flex-direction: column; align-items: stretch; justify-content: stretch; gap: 14px; padding: 32px max(30px, calc((100% - 800px) / 2)); overflow-y: auto; }
+  .assistant-intro { margin: auto 0; max-width: 620px; }
+  .assistant-intro .edge { color: var(--amber); margin-bottom: 18px; }
+  .assistant-intro h1 { font: italic 400 clamp(36px, 5vw, 64px)/1.02 var(--serif); letter-spacing: -.035em; margin: 0 0 18px; }
+  .assistant-intro p { color: var(--ink-2); max-width: 500px; }
+  .assistant-intro .capabilities { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+  .assistant-intro .capabilities span, .assistant-tool { border: 1px solid var(--line-strong); border-radius: 999px; padding: 5px 10px; font: 11px var(--mono); color: var(--ink-3); }
+  .assistant-turn { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; animation: rise .25s ease both; }
+  .assistant-turn.user { align-self: flex-end; background: var(--amber-dim); border: 1px solid rgba(242,140,40,.25); border-radius: 18px 18px 4px 18px; padding: 13px 17px; max-width: 80%; }
+  .assistant-turn.agent { align-self: stretch; border-left: 2px solid var(--amber); padding: 2px 0 2px 18px; margin: 8px 0 18px; }
+  .assistant-turn .speaker { display: block; font: 10px var(--mono); text-transform: uppercase; letter-spacing: .18em; color: var(--amber); margin-bottom: 8px; }
+  .assistant-status { font: italic 18px var(--serif); color: var(--ink-3); margin: 0 0 10px; }
+  .assistant-tool { align-self: flex-start; }
+  .assistant-options { border-top: 1px solid var(--line); padding-top: 16px; margin: 22px 0; }
+  .assistant-model { width: 100%; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); padding: 12px 14px; color: var(--ink); }
+  .assistant-options .toggle { margin-bottom: 13px; }
+  #assistant-project-path { overflow-wrap: anywhere; }
+  .assistant-memory { border-top: 1px solid var(--line); padding-top: 14px; }
+  .assistant-memory button { border: 0; background: none; color: var(--amber); cursor: pointer; padding: 0; font: 12px var(--mono); }
+  .assistant-memory-list { color: var(--ink-2); font-size: 13px; }
+  .assistant-memory-list > div { display: flex; gap: 10px; border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .assistant-memory-list span { flex: 1; }
+  .assistant-memory-list button { color: var(--ink-3); }
+  .assistant-connect { border-top: 1px solid var(--line); padding: 16px 0; color: var(--ink-2); font-size: 13px; }
+  .assistant-connect button { background: none; border: 1px solid var(--line-strong); border-radius: 999px; padding: 6px 11px; margin-top: 8px; color: var(--amber); cursor: pointer; }
+  .assistant-connect img { display: block; width: 210px; max-width: 100%; margin: 12px 0; border: 8px solid white; border-radius: 5px; }
+  body.assistant-mode footer, body.assistant-mode header .model-pick { display: none; }
+  body.assistant-mode .app { grid-template-rows: auto 1fr; grid-template-areas: "top top" "side stage"; }
+
   .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: grid; place-items: center; cursor: zoom-out; padding: 30px; }
   .lightbox img { max-width: 100%; max-height: 100%; border-radius: 4px; }
   [hidden] { display: none !important; }
@@ -240,10 +291,12 @@
   @media (max-width: 900px) {
     body { overflow: auto; }
     .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "side" "stage" "strip"; height: auto; }
+    body.assistant-mode .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "side" "stage"; grid-template-rows: auto auto minmax(70vh, 1fr); height: auto; }
     header { padding: 14px 16px 12px; gap: 12px; }
     header .edge { display: none; }
     aside, footer { padding-left: 16px; padding-right: 16px; }
     main { padding: 20px 16px; }
+    #assistant-stage { padding: 28px 18px; }
     .compare img { max-height: 70vh; }
     aside { border-right: 0; border-bottom: 1px solid var(--line); }
     main { min-height: 70vh; }
@@ -255,7 +308,7 @@
 <div class="app">
   <header>
     <div class="mark">imagine<b>.</b></div>
-    <span class="edge">v__IMAGINE_VERSION__ · local · offline</span>
+    <span class="edge">v__IMAGINE_VERSION__ · local · private</span>
     <span class="spacer"></span>
     <label class="model-pick">Model <select id="model" aria-label="Model"></select></label>
   </header>
@@ -264,6 +317,7 @@
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-create" aria-selected="true" aria-controls="create">Create</button>
       <button role="tab" id="tab-edit" aria-selected="false" aria-controls="edit">Edit</button>
+      <button role="tab" id="tab-assistant" aria-selected="false" aria-controls="assistant">Assist</button>
     </div>
 
     <form id="create">
@@ -273,13 +327,21 @@
         <textarea id="prompt" placeholder="A cat astronaut floating in a spaceship, golden hour through the window…" required></textarea>
       </label>
       <label class="toggle"><input type="checkbox" id="enhance"><span>Enhance with local AI<small>a chat model in Ollama writes the full prompt</small></span></label>
+      <div class="field" id="qwen-speed" hidden>
+        <span class="label">Qwen speed</span>
+        <div class="seg" id="speeds">
+          <button type="button" data-profile="fast" aria-pressed="false">Fast<small>512 · 20 steps</small></button>
+          <button type="button" data-profile="balanced" aria-pressed="false">Balanced<small>640 · 20 steps</small></button>
+          <button type="button" data-profile="quality" aria-pressed="true">Quality<small>1024 · exact</small></button>
+        </div>
+      </div>
       <div class="field">
         <span class="label">Frame</span>
         <div class="seg" id="sizes">
-          <button type="button" data-size="1024x1024" aria-pressed="true">Square<small>1024²</small></button>
-          <button type="button" data-size="832x1216" aria-pressed="false">Portrait<small>832×1216</small></button>
-          <button type="button" data-size="1216x832" aria-pressed="false">Landscape<small>1216×832</small></button>
-          <button type="button" data-size="1536x864" aria-pressed="false">Wide<small>1536×864</small></button>
+          <button type="button" data-frame="square" data-size="1024x1024" aria-pressed="true">Square<small>1024²</small></button>
+          <button type="button" data-frame="portrait" data-size="832x1216" aria-pressed="false">Portrait<small>832×1216</small></button>
+          <button type="button" data-frame="landscape" data-size="1216x832" aria-pressed="false">Landscape<small>1216×832</small></button>
+          <button type="button" data-frame="wide" data-size="1536x864" aria-pressed="false">Wide<small>1536×864</small></button>
         </div>
       </div>
       <div class="row" style="margin: 18px 0">
@@ -337,13 +399,45 @@
       <label class="toggle"><input type="checkbox" id="check"><span>Check each step<small>a vision model looks, and retries edits that didn't take</small></span></label>
       <button class="go" type="submit">Apply edits <kbd>⌘↵</kbd></button>
     </form>
+
+    <form id="assistant" hidden>
+      <h2>Think with <em>your Mac.</em></h2>
+      <label class="field"><span class="label">Local language model</span><select id="assistant-model" class="assistant-model" aria-label="Assistant model"></select></label>
+      <label class="field"><span class="label">Ask anything</span><textarea id="assistant-prompt" placeholder="Research a question, reason through a problem, review code, or write something…" required></textarea></label>
+      <div class="assistant-options">
+        <label class="toggle"><input type="checkbox" id="assistant-deep"><span>Deep reasoning<small>more thorough, but slower</small></span></label>
+        <label class="toggle"><input type="checkbox" id="assistant-web" checked><span>Internet lookup<small>public web pages and encyclopedia search</small></span></label>
+        <label class="toggle"><input type="checkbox" id="assistant-workers"><span>Specialist workers<small>sequential on small-memory Macs</small></span></label>
+        <label class="toggle"><input type="checkbox" id="assistant-project"><span>Project files<small>read-only access to <span id="assistant-project-path">this folder</span></small></span></label>
+        <label class="toggle"><input type="checkbox" id="assistant-computer"><span>Computer control<small>approve every screen read, click, and keystroke</small></span></label>
+        <label class="toggle"><input type="checkbox" id="assistant-whatsapp"><span>WhatsApp access<small>approve each outgoing message</small></span></label>
+      </div>
+      <div class="assistant-connect"><div id="whatsapp-status">WhatsApp is not connected.</div><button type="button" id="whatsapp-connect">Connect WhatsApp</button><img id="whatsapp-qr" alt="WhatsApp pairing QR code" hidden></div>
+      <button class="go" type="submit">Ask locally <kbd>⌘↵</kbd></button>
+      <div class="assistant-memory"><button type="button" id="assistant-memory-toggle">Saved memory</button><div class="assistant-memory-list" id="assistant-memory-list" hidden></div></div>
+    </form>
   </aside>
 
   <main id="stage">
-    <div class="empty">
-      <div class="edge" style="margin-bottom: 18px">darkroom · ready</div>
-      <h1>Every image starts <em>in the dark.</em></h1>
-      <p>Describe one on the left, or switch to Edit and drop in a photo. Everything runs on this Mac.</p>
+    <div class="home">
+      <div class="edge">Welcome to your local studio</div>
+      <h1>Make it. Change it. <em>Think it through.</em></h1>
+      <p>Three ways to begin, with your models and work kept on this Mac by default.</p>
+      <div class="home-choices">
+        <button type="button" class="home-card" data-open-tab="create"><span class="number">01 / IMAGE STUDIO</span><strong>Create</strong><span class="detail">Turn words into images. Choose a model, frame and seed; make up to four variations.</span><span class="entry">Start creating ↗</span></button>
+        <button type="button" class="home-card" data-open-tab="edit"><span class="number">02 / EDIT ROOM</span><strong>Edit</strong><span class="detail">Drop in a photo. Remove, add, restyle, swap a face or extend the scene in plain words.</span><span class="entry">Edit a photo ↗</span></button>
+        <button type="button" class="home-card" data-open-tab="assistant"><span class="number">03 / THINKING ROOM</span><strong>Assist</strong><span class="detail">Reason, code and write. Opt into web lookup, memory, workers, computer control or WhatsApp.</span><span class="entry">Ask locally ↗</span></button>
+      </div>
+      <div class="home-more"><span>Also: terminal · image API · MCP · model import · LoRAs</span><span>Web and WhatsApp connect only when enabled.</span><a href="https://github.com/nitya-afk/imagine#what-it-can-do" target="_blank" rel="noopener noreferrer">Full guide ↗</a></div>
+    </div>
+  </main>
+
+  <main id="assistant-stage" hidden aria-live="polite">
+    <div class="assistant-intro" id="assistant-intro">
+      <div class="edge">your local thinking room</div>
+      <h1>A second mind,<br><em>on this machine.</em></h1>
+      <p>Ask for reasoning, writing, coding help, or current information. Memory stays on this Mac; internet access is optional.</p>
+      <div class="capabilities"><span>local model</span><span>private memory</span><span>web lookup</span><span>specialist workers</span></div>
     </div>
   </main>
 
@@ -360,7 +454,13 @@ const DEFAULT_MODEL = '__IMAGINE_MODEL__';
 const $ = (id) => document.getElementById(id);
 const stage = $('stage');
 const EMPTY_STAGE = stage.innerHTML;
-const state = { size: '1024x1024', count: 1, extend: '', photo: null, face: null, busy: false, gallery: [] };
+const state = { size: '1024x1024', steps: undefined, cache: false, qwenProfile: 'quality', count: 1, extend: '', photo: null, face: null, busy: false, gallery: [] };
+const STANDARD_SIZES = { square: '1024x1024', portrait: '832x1216', landscape: '1216x832', wide: '1536x864' };
+const QWEN_PROFILES = {
+  fast: { steps: 20, cache: true, sizes: { square: '512x512', portrait: '416x608', landscape: '608x416', wide: '704x384' } },
+  balanced: { steps: 20, cache: true, sizes: { square: '640x640', portrait: '512x736', landscape: '736x512', wide: '832x480' } },
+  quality: { steps: 25, cache: false, sizes: STANDARD_SIZES },
+};
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const api = (path, init = {}) => fetch(path, { ...init, headers: { ...(init.headers || {}), 'x-imagine-token': TOKEN } });
@@ -390,13 +490,27 @@ async function stream(path, init, onEvent) {
 
 // ── Tabs and segmented controls ──
 function selectTab(name) {
-  for (const t of ['create', 'edit']) {
+  for (const t of ['create', 'edit', 'assistant']) {
     $('tab-' + t).setAttribute('aria-selected', String(t === name));
     $(t).hidden = t !== name;
   }
+  document.body.classList.toggle('assistant-mode', name === 'assistant');
+  stage.hidden = name === 'assistant';
+  $('assistant-stage').hidden = name !== 'assistant';
+  if (name === 'assistant') loadWhatsAppStatus();
 }
 $('tab-create').onclick = () => selectTab('create');
 $('tab-edit').onclick = () => selectTab('edit');
+$('tab-assistant').onclick = () => selectTab('assistant');
+stage.addEventListener('click', (event) => {
+  const choice = event.target.closest('[data-open-tab]');
+  if (!choice) return;
+  const tab = choice.dataset.openTab;
+  selectTab(tab);
+  if (tab === 'create') $('prompt').focus();
+  if (tab === 'edit') $('photo-drop').focus();
+  if (tab === 'assistant') $('assistant-prompt').focus();
+});
 function segmented(id, key, attr) {
   $(id).addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -408,6 +522,27 @@ function segmented(id, key, attr) {
 segmented('sizes', 'size', 'size');
 segmented('counts', 'count', 'count');
 segmented('extends', 'extend', 'extend');
+function applyModelProfile() {
+  const qwen = $('model').value.startsWith('qwen-image-2.1-uncensored');
+  $('qwen-speed').hidden = !qwen;
+  const profile = qwen ? QWEN_PROFILES[state.qwenProfile] : { steps: undefined, cache: false, sizes: STANDARD_SIZES };
+  state.steps = profile.steps;
+  state.cache = profile.cache;
+  for (const button of $('sizes').querySelectorAll('button')) {
+    const size = profile.sizes[button.dataset.frame];
+    button.dataset.size = size;
+    button.querySelector('small').textContent = size.replace('x', '×');
+    if (button.getAttribute('aria-pressed') === 'true') state.size = size;
+  }
+}
+$('speeds').addEventListener('click', (e) => {
+  const button = e.target.closest('button');
+  if (!button) return;
+  for (const other of $('speeds').querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === button));
+  state.qwenProfile = button.dataset.profile;
+  applyModelProfile();
+});
+$('model').addEventListener('change', applyModelProfile);
 $('chips').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -611,7 +746,7 @@ $('create').onsubmit = (e) => {
   e.preventDefault();
   const prompt = $('prompt').value.trim();
   if (!prompt) return $('prompt').focus();
-  runGenerate({ prompt, size: state.size, count: state.count, seed: $('seed').value || undefined, enhance: $('enhance').checked });
+  runGenerate({ prompt, size: state.size, steps: state.steps, cache: state.cache, count: state.count, seed: $('seed').value || undefined, enhance: $('enhance').checked });
 };
 
 $('edit').onsubmit = async (e) => {
@@ -666,10 +801,115 @@ $('edit').onsubmit = async (e) => {
 };
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-    const form = !$('create').hidden ? $('create') : $('edit');
+    const form = !$('create').hidden ? $('create') : !$('edit').hidden ? $('edit') : $('assistant');
     form.requestSubmit();
   }
 });
+
+// ── Local assistant ──
+const assistantHistory = [];
+function addAssistantTurn(role, content) {
+  const box = document.createElement('div');
+  box.className = 'assistant-turn ' + role;
+  const speaker = document.createElement('span');
+  speaker.className = 'speaker';
+  speaker.textContent = role === 'user' ? 'You' : 'Imagine';
+  box.append(speaker, document.createTextNode(content));
+  $('assistant-intro')?.remove();
+  $('assistant-stage').append(box);
+  box.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  return box;
+}
+async function loadAssistantModels() {
+  const select = $('assistant-model');
+  try {
+    const res = await api('/api/assistant/models');
+    if (!res.ok) throw new Error();
+    const info = await res.json();
+    const label = (name) => name === 'qwen3.5:4b' ? 'Qwen 3.5 4B · official' : name === 'huihui_ai/qwen3.5-abliterated:4b' ? 'Qwen 3.5 4B · less-filtered' : name === 'qwen3.5:9b' ? 'Qwen 3.5 9B · official' : name;
+    select.innerHTML = info.models.map((m) => `<option value="${esc(m.name)}">${esc(label(m.name))} · ${(m.size / 1e9).toFixed(1)} GB</option>`).join('');
+    if (info.defaultModel) select.value = info.defaultModel;
+    if (info.projectDir) $('assistant-project-path').textContent = info.projectDir;
+    if (!info.models.length) select.innerHTML = '<option value="qwen3.5:4b">Install qwen3.5:4b in Ollama first</option>';
+  } catch { select.innerHTML = '<option value="qwen3.5:4b">qwen3.5:4b</option>'; }
+}
+async function loadAssistantMemory() {
+  const list = $('assistant-memory-list');
+  const res = await api('/api/assistant/memory');
+  if (!res.ok) return;
+  const { memories } = await res.json();
+  list.innerHTML = '';
+  if (!memories.length) { list.textContent = 'Nothing saved yet. Ask me to remember something.'; return; }
+  for (const item of memories) {
+    const row = document.createElement('div');
+    const text = document.createElement('span');
+    text.textContent = item.text;
+    const remove = document.createElement('button');
+    remove.textContent = 'Remove';
+    remove.onclick = async () => { await api('/api/assistant/memory/' + encodeURIComponent(item.id), { method: 'DELETE' }); loadAssistantMemory(); };
+    row.append(text, remove);
+    list.append(row);
+  }
+}
+async function loadWhatsAppStatus() {
+  try {
+    const res = await api('/api/assistant/whatsapp');
+    if (!res.ok) return;
+    const info = await res.json();
+    $('whatsapp-status').textContent = info.state === 'connected' ? 'WhatsApp connected on this Mac.' : info.state === 'qr' ? 'Scan this in WhatsApp → Linked devices.' : info.state === 'connecting' ? 'Waiting for WhatsApp…' : 'WhatsApp is not connected.';
+    $('whatsapp-qr').hidden = !info.qr;
+    if (info.qr) $('whatsapp-qr').src = info.qr;
+    $('whatsapp-connect').hidden = info.state === 'connected' || info.state === 'connecting' || info.state === 'qr';
+  } catch { $('whatsapp-status').textContent = 'WhatsApp status unavailable.'; }
+}
+$('whatsapp-connect').onclick = async () => {
+  $('whatsapp-status').textContent = 'Starting WhatsApp pairing…';
+  try {
+    const res = await api('/api/assistant/whatsapp/connect', { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).error);
+    loadWhatsAppStatus();
+  } catch (err) { $('whatsapp-status').textContent = `Could not connect: ${err.message}`; }
+};
+setInterval(() => { if (!$('assistant').hidden) loadWhatsAppStatus(); }, 4000);
+$('assistant-memory-toggle').onclick = () => {
+  const list = $('assistant-memory-list');
+  list.hidden = !list.hidden;
+  if (!list.hidden) loadAssistantMemory();
+};
+$('assistant').onsubmit = async (e) => {
+  e.preventDefault();
+  if (state.busy) return;
+  const prompt = $('assistant-prompt').value.trim();
+  if (!prompt) return;
+  const history = assistantHistory.slice(-12);
+  addAssistantTurn('user', prompt);
+  $('assistant-prompt').value = '';
+  setBusy(true);
+  const status = document.createElement('div');
+  status.className = 'assistant-status';
+  status.textContent = 'Thinking locally…';
+  $('assistant-stage').append(status);
+  let answer = '';
+  try {
+    await stream('/api/assistant/chat', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, history, model: $('assistant-model').value, deep: $('assistant-deep').checked, web: $('assistant-web').checked, workers: $('assistant-workers').checked, projectFiles: $('assistant-project').checked, computer: $('assistant-computer').checked, whatsapp: $('assistant-whatsapp').checked }),
+    }, (ev) => {
+      if (ev.type === 'status') status.textContent = ev.message;
+      if (ev.type === 'tool') status.textContent = `Using ${ev.name.replaceAll('_', ' ')}…`;
+      if (ev.type === 'answer') answer = ev.content;
+      if (ev.type === 'error') throw new Error(ev.message);
+      if (ev.type === 'memory' && !$('assistant-memory-list').hidden) loadAssistantMemory();
+      if (ev.type === 'approval') {
+        const allow = confirm(`Allow Imagine to ${ev.description}?`);
+        void api('/api/assistant/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ev.id, allow }) });
+      }
+    });
+    addAssistantTurn('agent', answer || 'The model returned no answer.');
+    assistantHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: answer });
+  } catch (err) { addAssistantTurn('agent', `Could not finish: ${err.message}`); }
+  finally { status.remove(); setBusy(false); }
+};
 
 // ── Contact sheet ──
 function filmItem(img) {
@@ -733,9 +973,11 @@ async function loadModels() {
   const list = models.length ? models : [DEFAULT_MODEL];
   const canonical = (n) => n.includes(':') ? n : n + ':latest';
   sel.innerHTML = list.map((m) => `<option value="${esc(m)}" ${canonical(m) === canonical(DEFAULT_MODEL) ? 'selected' : ''}>${esc(m.replace(/:latest$/, ''))}</option>`).join('');
+  applyModelProfile();
 }
 loadModels();
 loadGallery();
+loadAssistantModels();
 </script>
 </body>
 </html>

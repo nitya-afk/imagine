@@ -92,6 +92,9 @@ test('serves the page with this session token, version and model baked in', asyn
   assert.ok(html.includes(`const TOKEN = '${token}'`));
   assert.ok(html.includes('v9.9.9'));
   assert.ok(html.includes(`const DEFAULT_MODEL = 'x/flux2-klein'`));
+  assert.ok(html.includes('Welcome to your local studio'));
+  for (const tab of ['create', 'edit', 'assistant']) assert.ok(html.includes(`data-open-tab="${tab}"`));
+  assert.ok(html.includes('Web and WhatsApp connect only when enabled.'));
   assert.ok(!html.includes('__IMAGINE_'));
 });
 
@@ -126,14 +129,14 @@ test('generate streams progress, then each saved image with its settings', async
   const res = await api('/api/generate', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ prompt: 'a lighthouse', size: '832x1216', count: 2, seed: 7, model: 'klein-4b-mxfp8' }),
+    body: JSON.stringify({ prompt: 'a lighthouse', size: '832x1216', steps: 8, count: 2, seed: 7, model: 'klein-4b-mxfp8' }),
   });
   const all = await events(res);
   assert.deepEqual(
-    calls.map((c) => [c.model, c.prompt, c.width, c.height, c.seed]),
+    calls.map((c) => [c.model, c.prompt, c.width, c.height, c.steps, c.seed]),
     [
-      ['klein-4b-mxfp8', 'a lighthouse', 832, 1216, 7],
-      ['klein-4b-mxfp8', 'a lighthouse', 832, 1216, 8],
+      ['klein-4b-mxfp8', 'a lighthouse', 832, 1216, 8, 7],
+      ['klein-4b-mxfp8', 'a lighthouse', 832, 1216, 8, 8],
     ],
   );
   assert.ok(all.some((e) => e.type === 'progress' && e.completed === 2 && e.total === 2));

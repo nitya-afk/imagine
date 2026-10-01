@@ -8,6 +8,7 @@ import { prepareImage } from './images.ts';
 import { normalizeModelName } from './models.ts';
 import { generateImage, OllamaError, type GenerateParams, type StepProgress } from './ollama.ts';
 import { pngSize, withMetadata } from './png.ts';
+import { generateQwenImage, isQwenModel } from './qwen.ts';
 import type { RuntimeEvents } from './runtime.ts';
 
 export type Generate = (params: GenerateParams, onProgress?: (p: StepProgress) => void, idea?: string) => Promise<Buffer>;
@@ -23,9 +24,11 @@ export function imageGenerator(events: RuntimeEvents, version: string): Generate
       : undefined;
     const request = { ...params, images, model: normalizeModelName(params.model) };
     try {
-      const png = await withImageBackend((host) => generateImage(host, request, onProgress), defaultDeps(events), {
-        editing: Boolean(request.images?.length),
-      });
+      const png = isQwenModel(request.model)
+        ? await generateQwenImage(request, onProgress)
+        : await withImageBackend((host) => generateImage(host, request, onProgress), defaultDeps(events), {
+            editing: Boolean(request.images?.length),
+          });
       const size = pngSize(png) ?? { width: request.width ?? 0, height: request.height ?? 0 };
       return withMetadata(png, {
         prompt: request.prompt,

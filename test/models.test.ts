@@ -19,6 +19,8 @@ test('aliases resolve to the variant they point at', () => {
   assert.equal(canonicalModel('x/flux2-klein:9b'), 'x/flux2-klein:9b-fp4');
   assert.equal(canonicalModel('x/z-image-turbo'), 'x/z-image-turbo:fp8');
   assert.equal(canonicalModel('x/flux2-klein:4b-bf16'), 'x/flux2-klein:4b-bf16');
+  assert.equal(canonicalModel('qwen-image-2.1-uncensored'), 'qwen-image-2.1-uncensored:q6_k');
+  assert.equal(canonicalModel('qwen-image-2.1-uncensored:q4_k_m'), 'qwen-image-2.1-uncensored:q6_k');
   assert.equal(withTag('localhost:5000/model'), 'localhost:5000/model:latest');
 });
 

@@ -52,6 +52,8 @@ export interface GenerateParams {
   width?: number;
   height?: number;
   steps?: number;
+  /** Let compatible local backends reuse diffusion work for a faster, approximate result. */
+  cache?: boolean;
   seed: number;
   /** Base64-encoded reference images. Their presence turns the request into an edit. */
   images?: string[];
