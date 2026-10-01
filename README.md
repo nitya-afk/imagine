@@ -1,6 +1,6 @@
 # imagine
 
-**Generate and edit images on your Mac, fully offline.** It uses FLUX.2 Klein image models on Apple silicon, from the terminal, from any app that speaks the OpenAI API, or from AI assistants over MCP. Image generation uploads nothing. The optional Assist tab can use internet search and WhatsApp when you enable those features.
+**Generate and edit images on your Mac, fully offline.** It uses FLUX.2 Klein image models on Apple silicon, from the terminal, from any app that speaks the OpenAI API, or from AI assistants over MCP. Image generation uploads nothing. The optional Assist tab can use internet search, WhatsApp or a frontier model when you enable those features.
 
 The browser opens with three clear paths: **Create** images, **Edit** photos, or **Assist** with a local language model. The first screen also points to the terminal, image API, MCP, model import and LoRA features.
 
@@ -26,6 +26,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 - **Run Qwen-Image 2.1 GGUF locally** through a Metal-native backend, including the higher-quality uncensored Q6_K variant.
 - **Use it in your browser** (`imagine ui`): create, upload a photo and edit it, compare before and after, and keep editing.
 - **Use a local assistant** in the Assist tab: reasoning, writing, coding help, optional web lookup, persistent local memory, and bounded workers. Computer control and WhatsApp are opt-in.
+- **Route text requests intelligently**: keep Assist local, explicitly choose a frontier tier, or use Smart routing that asks before a complex request goes to OpenAI. Set input, output and session token limits.
 - **Edit photos like an editor**: remove or add things, change the background, change or swap faces, restyle, and extend the scene. Describe it in plain English and a local model plans the steps and checks each result.
 - **Write better prompts for you** (`--enhance`), using a local chat model.
 - **Reproduce any image**: every PNG remembers its prompt, seed and model (`imagine again`).
@@ -183,7 +184,7 @@ imagine ui
 
 ![imagine ui: two images from one prompt, and the contact sheet of recent images](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/ui-create.jpg)
 
-- **First screen**: choose Create, Edit or Assist from a three-card overview, with a short description of each and links to the other ways to use Imagine.
+- **First screen**: a first-visit guide explains Create, Edit, Assist, optional frontier routing and approval boundaries. Reopen it any time with **? What can I do**; the three-card overview remains behind it.
 - **Create**: write a prompt, pick a frame (square, portrait, landscape, wide), make up to four at once, and optionally let a local model enhance the prompt.
 - **Edit**: drop in a photo (or paste one, or pick one you made), say what should change, and watch each planned step run. Quick buttons start a remove, add, background, face or style edit. You can also extend the frame to 16:9, 4:3, 1:1 or 9:16, or swap in a face from a second photo.
 - **Before and after**: drag the slider to compare, then **Keep editing** to carry on from the result.
@@ -220,6 +221,17 @@ For a community variant trained to refuse fewer prompts, install `ollama pull hu
 Model capabilities and refusal behavior come from the model itself; a small local model cannot honestly be guaranteed to be “unrestricted” or to match a frontier model at reasoning. This integration uses the released model weights without fine-tuning. Tool use, memory and computer access are application features, not changes to the weights; fine-tuning would need a defined dataset and separate evaluation.
 
 The Assist tab is not an unattended computer agent: it cannot run arbitrary shell commands or edit project files, and each computer action and outgoing WhatsApp message needs approval. See [the full Assist guide](docs/ASSIST.md) for example requests, setup and data locations.
+
+### Optional frontier routing
+
+Set `OPENAI_API_KEY` in the environment that launches `imagine ui` to enable OpenAI Responses. The key stays on the server and is never put into the browser page. Assist still starts in **Local only** mode:
+
+- **Smart** uses a visible, zero-cost heuristic: focused requests stay local; longer coding, analysis or multi-step requests may be routed to a frontier model. You approve each cloud request before any text is sent.
+- **Frontier** explicitly chooses **Fast** (GPT-6 Luna), **Balanced** (GPT-6.1 Sol) or **Best** (GPT-6 Astra), or lets Imagine choose a tier. Availability depends on your OpenAI API account. These are the current [official model tiers](https://developers.openai.com/api/docs/guides/latest-model).
+- Cloud chat is **text-only**. It sends only the current message by default. You can opt in to include up to 12 previous chat turns, which may contain private information. Local files, screenshots, saved memory, WhatsApp messages and tool results are not automatically attached. Cloud mode does not run the local tool switches.
+- **Max cloud input tokens** is checked with the [input-token counting endpoint](https://developers.openai.com/api/docs/guides/token-counting) before the completion. **Max answer tokens** is enforced by the provider for each response (including reasoning tokens). The default in-app session budget is 20,000 total tokens; Imagine reserves the counted input plus maximum output before sending and reconciles with reported usage. Set `IMAGINE_FRONTIER_SESSION_TOKENS` before launch to change it. The budget resets when the UI server restarts; set a separate spend limit in your provider account. No usage is incurred by Imagine's router heuristic itself.
+
+This is an opt-in route, not a claim that local and frontier providers have identical privacy or tool behavior. The frontier integration is covered by mocked API tests; it has not been exercised with your own API key.
 
 ## Better prompts, reproducible images
 
@@ -533,6 +545,8 @@ imagine --help                                       # every option
 | `OLLAMA_HOST` | `127.0.0.1:11434` | your normal Ollama, read the same way Ollama reads it |
 | `OLLAMA_MODELS` | `~/.ollama/models` | the model folder shared with Ollama |
 | `BRAVE_SEARCH_API_KEY` | | optional broad web search for the assistant; without it, Wikipedia search is used |
+| `OPENAI_API_KEY` | | enables optional frontier text chat through the OpenAI Responses API |
+| `IMAGINE_FRONTIER_SESSION_TOKENS` | `20000` | maximum total cloud tokens reserved for this running UI server; not an account billing cap |
 
 ## Update and uninstall
 

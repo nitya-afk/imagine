@@ -113,6 +113,7 @@ export interface AssistantOptions {
   projectDir?: string;
   fetcher?: Fetch;
   deep?: boolean;
+  maxOutputTokens?: number;
   web?: boolean;
   workers?: boolean;
   projectFiles?: boolean;
@@ -128,6 +129,7 @@ export class LocalAssistant {
   readonly projectDir: string;
   readonly fetcher: Fetch;
   readonly deep: boolean;
+  readonly maxOutputTokens: number;
   readonly web: boolean;
   readonly workers: boolean;
   readonly projectFiles: boolean;
@@ -143,6 +145,7 @@ export class LocalAssistant {
     this.projectDir = realpathSync(options.projectDir ?? process.cwd());
     this.fetcher = options.fetcher ?? fetch;
     this.deep = options.deep ?? false;
+    this.maxOutputTokens = Math.max(128, Math.min(4096, Math.trunc(options.maxOutputTokens ?? (this.deep ? 2048 : 1024))));
     this.web = options.web ?? true;
     this.workers = options.workers ?? false;
     this.projectFiles = options.projectFiles ?? false;
@@ -186,7 +189,7 @@ export class LocalAssistant {
       emit({ type: 'status', message: turn ? 'Working through the results…' : 'Thinking locally…' });
       const response = await this.fetcher(`${this.host}/api/chat`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: this.model, messages, tools, stream: false, think: this.deep, keep_alive: '5m', options: { num_ctx: 8192, num_predict: this.deep ? 2048 : 1024, temperature: 0.35 } }),
+        body: JSON.stringify({ model: this.model, messages, tools, stream: false, think: this.deep, keep_alive: '5m', options: { num_ctx: 8192, num_predict: this.maxOutputTokens, temperature: 0.35 } }),
         signal: AbortSignal.timeout(worker ? 180_000 : 300_000),
       });
       const body = await response.json() as { message?: ChatMessage; error?: string };

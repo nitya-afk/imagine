@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { basename, join } from 'node:path';
 import { assistantModels, LocalAssistant, MemoryStore, type ChatMessage } from './assistant.ts';
 import { WhatsAppBridge } from './whatsapp.ts';
+import { answerWithFrontier, chooseRoute, FRONTIER_MODELS, TokenBudget, type FrontierTier, type RouteMode } from './router.ts';
 import { normalizeHost } from './host.ts';
 import { describeStep, runEdit, stepsFromFlags } from './edit.ts';
 import { enhanceIdea } from './enhance.ts';
@@ -26,9 +27,12 @@ export interface UiDeps {
   /** Defaults to the real prompt enhancer; tests replace it. */
   enhance?: (idea: string, onStatus: (message: string) => void) => Promise<string>;
   /** Tests can supply a local assistant without starting Ollama. */
-  assistant?: (options: { model: string; deep: boolean; web: boolean; workers: boolean; projectFiles: boolean; computer: boolean; whatsapp: boolean }) => Pick<LocalAssistant, 'run'>;
+  assistant?: (options: { model: string; deep: boolean; maxOutputTokens: number; web: boolean; workers: boolean; projectFiles: boolean; computer: boolean; whatsapp: boolean }) => Pick<LocalAssistant, 'run'>;
   assistantModels?: typeof assistantModels;
   assistantMemory?: MemoryStore;
+  /** Tests may substitute the OpenAI transport and key; neither is sent to the browser. */
+  frontierFetch?: typeof fetch;
+  frontierKey?: string;
 }
 
 type Event = Record<string, unknown> & { type: string };
@@ -55,6 +59,9 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
   const whatsapp = new WhatsAppBridge();
   const closeWhatsApp = () => { void whatsapp.stop().catch(() => {}); };
   const approvals = new Map<string, (allowed: boolean) => void>();
+  const frontierKey = deps.frontierKey ?? process.env.OPENAI_API_KEY ?? '';
+  const configuredBudget = Number(process.env.IMAGINE_FRONTIER_SESSION_TOKENS);
+  const frontierBudget = new TokenBudget(Number.isSafeInteger(configuredBudget) && configuredBudget >= 1000 ? Math.min(configuredBudget, 1_000_000) : 20_000);
   const usedAssistantModels = new Set<string>();
   const releaseAssistantModels = async () => {
     for (const model of usedAssistantModels) {
@@ -111,6 +118,9 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     }
     if (req.method === 'GET' && path === '/api/gallery') return json(res, { images: gallery() });
     if (req.method === 'GET' && path === '/api/assistant/models') return json(res, await (deps.assistantModels ?? assistantModels)());
+    if (req.method === 'GET' && path === '/api/assistant/router') return json(res, {
+      configured: Boolean(frontierKey), models: FRONTIER_MODELS, sessionTokens: frontierBudget.spent, sessionLimit: frontierBudget.limit,
+    });
     if (req.method === 'GET' && path === '/api/assistant/memory') return json(res, { memories: memory.list() });
     if (req.method === 'GET' && path === '/api/assistant/whatsapp') return json(res, whatsapp.status());
     if (req.method === 'POST' && path === '/api/assistant/whatsapp/connect') {
@@ -147,6 +157,11 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     if (!prompt) throw new HttpError(400, 'Write a message first.');
     const model = typeof body.model === 'string' && body.model ? body.model : 'qwen3.5:4b';
     const deep = body.deep === true;
+    const maxOutputTokens = invalid(() => parseIntInRange(Number(body.maxOutputTokens ?? (deep ? 2048 : 1024)), 'maxOutputTokens', 128, 4096));
+    const maxInputTokens = invalid(() => parseIntInRange(Number(body.maxInputTokens ?? 4000), 'maxInputTokens', 256, 16_000));
+    const mode = (body.mode === 'smart' || body.mode === 'frontier' ? body.mode : 'local') as RouteMode;
+    const tier = (['fast', 'balanced', 'best'].includes(String(body.frontierTier)) ? body.frontierTier : 'auto') as FrontierTier;
+    const cloudHistory = body.cloudHistory === true;
     const web = body.web !== false;
     const workers = body.workers === true;
     const projectFiles = body.projectFiles === true;
@@ -160,11 +175,23 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
       approvals.set(id, (allowed) => { clearTimeout(timer); resolve(allowed); });
       send({ type: 'approval', id, description });
     });
-    const assistant = deps.assistant?.({ model, deep, web, workers, projectFiles, computer, whatsapp: useWhatsApp }) ?? new LocalAssistant({ model, deep, web, workers, projectFiles, computer, whatsapp: useWhatsApp ? whatsapp : undefined, approve, memory });
-    usedAssistantModels.add(model);
     await enqueue(async () => {
       try {
-        const answer = await assistant.run(prompt, history, send);
+        const route = chooseRoute(prompt, mode, Boolean(frontierKey), tier);
+        send({ type: 'route', provider: route.provider, model: route.model ?? model, reason: route.reason });
+        let answer: string;
+        if (route.provider === 'frontier') {
+          if (!(await approve(`send your message${cloudHistory ? ' and up to 12 previous chat turns (which may contain private information)' : ' without chat history'} to OpenAI (${route.model}). No local files, screenshots, saved memory or WhatsApp messages are automatically attached`))) {
+            throw new Error('Cloud request was not approved. Nothing was sent to the frontier model.');
+          }
+          answer = await answerWithFrontier(prompt, cloudHistory ? history : [], {
+            key: frontierKey, model: route.model!, maxInputTokens, maxOutputTokens, budget: frontierBudget, fetcher: deps.frontierFetch,
+          }, send);
+        } else {
+          const assistant = deps.assistant?.({ model, deep, maxOutputTokens, web, workers, projectFiles, computer, whatsapp: useWhatsApp }) ?? new LocalAssistant({ model, deep, maxOutputTokens, web, workers, projectFiles, computer, whatsapp: useWhatsApp ? whatsapp : undefined, approve, memory });
+          usedAssistantModels.add(model);
+          answer = await assistant.run(prompt, history, send);
+        }
         send({ type: 'answer', content: answer });
         send({ type: 'done' });
       } catch (err) {

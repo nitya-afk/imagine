@@ -68,6 +68,8 @@
   .mark b { color: var(--amber); font-weight: 400; }
   .edge { font: 11px/1 var(--mono); color: var(--ink-3); letter-spacing: 0.16em; text-transform: uppercase; }
   header .spacer { flex: 1; }
+  .guide-open { border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); color: var(--amber-hot); padding: 7px 13px; cursor: pointer; font: 11px var(--mono); letter-spacing: .08em; }
+  .guide-open:hover { border-color: var(--amber); }
   select, input, textarea, button { font: inherit; color: inherit; }
   .model-pick {
     display: flex; align-items: center; gap: 10px;
@@ -267,6 +269,11 @@
   .assistant-tool { align-self: flex-start; }
   .assistant-options { border-top: 1px solid var(--line); padding-top: 16px; margin: 22px 0; }
   .assistant-model { width: 100%; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r); padding: 12px 14px; color: var(--ink); }
+  .assistant-route-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 16px; }
+  .assistant-route-grid label { min-width: 0; }
+  .assistant-route-grid select, .assistant-route-grid input { width: 100%; height: 42px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); }
+  .assistant-route-note { color: var(--ink-3); font: 12px/1.45 var(--sans); margin: -2px 0 16px; }
+  .assistant-usage { color: var(--amber-hot); font: 11px/1.5 var(--mono); margin-top: 10px; }
   .assistant-options .toggle { margin-bottom: 13px; }
   #assistant-project-path { overflow-wrap: anywhere; }
   .assistant-memory { border-top: 1px solid var(--line); padding-top: 14px; }
@@ -280,6 +287,22 @@
   .assistant-connect img { display: block; width: 210px; max-width: 100%; margin: 12px 0; border: 8px solid white; border-radius: 5px; }
   body.assistant-mode footer, body.assistant-mode header .model-pick { display: none; }
   body.assistant-mode .app { grid-template-rows: auto 1fr; grid-template-areas: "top top" "side stage"; }
+
+  .guide-modal { width: min(760px, calc(100vw - 32px)); max-height: min(780px, calc(100vh - 32px)); overflow-y: auto; padding: 0; border: 1px solid rgba(242,140,40,.45); border-radius: 18px; background: #100e0c; color: var(--ink); box-shadow: 0 30px 100px rgba(0,0,0,.8); }
+  .guide-modal::backdrop { background: rgba(0,0,0,.8); backdrop-filter: blur(8px); }
+  .guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 28px 30px 18px; border-bottom: 1px solid var(--line); }
+  .guide-head h2 { font-size: 36px; margin: 8px 0 0; }
+  .guide-close { border: 1px solid var(--line-strong); border-radius: 50%; width: 34px; height: 34px; flex: none; background: var(--raise); color: var(--ink); cursor: pointer; }
+  .guide-body { padding: 20px 30px 30px; }
+  .guide-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .guide-paths article { border-top: 2px solid var(--amber); background: var(--raise); padding: 15px; border-radius: 2px 2px 10px 10px; }
+  .guide-paths strong { display: block; font: italic 25px var(--serif); margin-bottom: 7px; }
+  .guide-paths p, .guide-body p { color: var(--ink-2); font-size: 13px; line-height: 1.5; margin: 0; }
+  .guide-body h3 { font: italic 23px var(--serif); margin: 24px 0 8px; }
+  .guide-body ul { padding-left: 19px; color: var(--ink-2); font-size: 13px; line-height: 1.7; }
+  .guide-body a { color: var(--amber-hot); }
+  .guide-foot { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .guide-foot button { border: 0; border-radius: 999px; background: var(--amber); color: #1a0d00; padding: 9px 16px; cursor: pointer; }
 
   .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: grid; place-items: center; cursor: zoom-out; padding: 30px; }
   .lightbox img { max-width: 100%; max-height: 100%; border-radius: 4px; }
@@ -300,6 +323,8 @@
     .compare img { max-height: 70vh; }
     aside { border-right: 0; border-bottom: 1px solid var(--line); }
     main { min-height: 70vh; }
+    .guide-paths { grid-template-columns: 1fr; }
+    .guide-head, .guide-body { padding-left: 18px; padding-right: 18px; }
   }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -310,6 +335,7 @@
     <div class="mark">imagine<b>.</b></div>
     <span class="edge">v__IMAGINE_VERSION__ · local · private</span>
     <span class="spacer"></span>
+    <button type="button" id="guide-open" class="guide-open">? What can I do</button>
     <label class="model-pick">Model <select id="model" aria-label="Model"></select></label>
   </header>
 
@@ -402,7 +428,18 @@
 
     <form id="assistant" hidden>
       <h2>Think with <em>your Mac.</em></h2>
+      <div class="assistant-route-grid">
+        <label><span class="label">Thinking route</span><select id="assistant-mode"><option value="local">Local only · private</option><option value="smart">Smart · ask before cloud</option><option value="frontier">Frontier · ask before cloud</option></select></label>
+        <label><span class="label">Frontier tier</span><select id="assistant-tier"><option value="auto">Auto choose</option><option value="fast">Fast · Luna</option><option value="balanced">Balanced · Sol</option><option value="best">Best · Astra</option></select></label>
+      </div>
+      <p class="assistant-route-note" id="assistant-route-note">Local only. Your chat stays on this Mac.</p>
+      <label class="toggle"><input type="checkbox" id="assistant-cloud-history"><span>Include recent chat in cloud requests<small>off by default; prior turns may contain private information</small></span></label>
       <label class="field"><span class="label">Local language model</span><select id="assistant-model" class="assistant-model" aria-label="Assistant model"></select></label>
+      <div class="assistant-route-grid">
+        <label><span class="label">Max answer tokens</span><input type="number" id="assistant-output-cap" min="128" max="4096" value="1024"></label>
+        <label><span class="label">Max cloud input tokens</span><input type="number" id="assistant-input-cap" min="256" max="16000" value="4000"></label>
+      </div>
+      <div class="assistant-route-note" id="assistant-budget">Cloud is off until you configure an API key and approve a request.</div>
       <label class="field"><span class="label">Ask anything</span><textarea id="assistant-prompt" placeholder="Research a question, reason through a problem, review code, or write something…" required></textarea></label>
       <div class="assistant-options">
         <label class="toggle"><input type="checkbox" id="assistant-deep"><span>Deep reasoning<small>more thorough, but slower</small></span></label>
@@ -413,7 +450,7 @@
         <label class="toggle"><input type="checkbox" id="assistant-whatsapp"><span>WhatsApp access<small>approve each outgoing message</small></span></label>
       </div>
       <div class="assistant-connect"><div id="whatsapp-status">WhatsApp is not connected.</div><button type="button" id="whatsapp-connect">Connect WhatsApp</button><img id="whatsapp-qr" alt="WhatsApp pairing QR code" hidden></div>
-      <button class="go" type="submit">Ask locally <kbd>⌘↵</kbd></button>
+      <button class="go" type="submit" id="assistant-submit">Ask locally <kbd>⌘↵</kbd></button>
       <div class="assistant-memory"><button type="button" id="assistant-memory-toggle">Saved memory</button><div class="assistant-memory-list" id="assistant-memory-list" hidden></div></div>
     </form>
   </aside>
@@ -434,9 +471,9 @@
 
   <main id="assistant-stage" hidden aria-live="polite">
     <div class="assistant-intro" id="assistant-intro">
-      <div class="edge">your local thinking room</div>
-      <h1>A second mind,<br><em>on this machine.</em></h1>
-      <p>Ask for reasoning, writing, coding help, or current information. Memory stays on this Mac; internet access is optional.</p>
+      <div class="edge" id="assistant-intro-label">your local thinking room</div>
+      <h1 id="assistant-intro-title">A second mind,<br><em>on this machine.</em></h1>
+      <p id="assistant-intro-copy">Ask for reasoning, writing, coding help, or current information. Memory stays on this Mac; internet access is optional.</p>
       <div class="capabilities"><span>local model</span><span>private memory</span><span>web lookup</span><span>specialist workers</span></div>
     </div>
   </main>
@@ -446,6 +483,21 @@
     <div class="film" id="film"><span class="none">Your images will appear here.</span></div>
   </footer>
 </div>
+<dialog id="guide-modal" class="guide-modal" aria-labelledby="guide-title">
+  <div class="guide-head"><div><span class="edge">The field guide · imagine</span><h2 id="guide-title">What can you do here?</h2></div><button type="button" class="guide-close" id="guide-close" aria-label="Close guide">×</button></div>
+  <div class="guide-body">
+    <div class="guide-paths">
+      <article><strong>Create</strong><p>Make images from words. Choose FLUX or Qwen, size, seed, speed and quality. Save or vary the result.</p></article>
+      <article><strong>Edit</strong><p>Upload or paste a photo. Add, remove, restyle, change faces or extend the frame; compare before and after.</p></article>
+      <article><strong>Assist</strong><p>Ask a local model to reason, write or code. Turn on web, memory, project reading, workers, computer control or WhatsApp as needed.</p></article>
+    </div>
+    <h3>Local by default. Frontier by choice.</h3>
+    <p>Assist starts local. Smart routing suggests a frontier model for complex text requests when an API key is configured, and asks permission each time. Frontier mode lets you choose Luna, Sol or Astra. Cloud chat sends only your current text by default. You can opt in to include recent chat; no local files, screenshots, saved memory or WhatsApp messages are automatically attached. Token fields cap each request; the session budget limits use in this running app, not your provider bill.</p>
+    <h3>More ways to work</h3>
+    <ul><li>Terminal commands, an OpenAI-compatible image API and MCP tools for other assistants.</li><li>Import and quantize image models, add LoRAs, and reproduce past images from saved settings.</li><li>Computer actions and outgoing WhatsApp messages require individual approval. Mac permissions and WhatsApp pairing are separate setup steps.</li></ul>
+    <div class="guide-foot"><a href="https://github.com/nitya-afk/imagine#what-it-can-do" target="_blank" rel="noopener noreferrer">Read the full guide ↗</a><button type="button" id="guide-done">Start exploring</button></div>
+  </div>
+</dialog>
 <div class="lightbox" id="lightbox" hidden><img alt=""></div>
 
 <script>
@@ -464,6 +516,13 @@ const QWEN_PROFILES = {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const api = (path, init = {}) => fetch(path, { ...init, headers: { ...(init.headers || {}), 'x-imagine-token': TOKEN } });
+
+const guide = $('guide-modal');
+function openGuide() { if (!guide.open) guide.showModal(); try { localStorage.setItem('imagine-guide-seen-v1', '1'); } catch {} }
+$('guide-open').onclick = openGuide;
+$('guide-close').onclick = $('guide-done').onclick = () => guide.close();
+guide.addEventListener('click', (e) => { if (e.target === guide) guide.close(); });
+try { if (!localStorage.getItem('imagine-guide-seen-v1')) openGuide(); } catch { openGuide(); }
 
 /** Read a newline-delimited JSON stream, calling onEvent for each line as it arrives. */
 async function stream(path, init, onEvent) {
@@ -808,6 +867,32 @@ document.addEventListener('keydown', (e) => {
 
 // ── Local assistant ──
 const assistantHistory = [];
+let cloudConfigured = false;
+function updateAssistantRoute() {
+  const mode = $('assistant-mode').value;
+  if ($('assistant-intro-label')) $('assistant-intro-label').textContent = mode === 'local' ? 'your local thinking room' : mode === 'smart' ? 'local first · frontier when approved' : 'frontier intelligence · with approval';
+  if ($('assistant-intro-title')) $('assistant-intro-title').innerHTML = mode === 'local' ? 'A second mind,<br><em>on this machine.</em>' : 'A second mind,<br><em>on your terms.</em>';
+  if ($('assistant-intro-copy')) $('assistant-intro-copy').textContent = mode === 'local' ? 'Ask for reasoning, writing, coding help, or current information. Memory stays on this Mac; internet access is optional.' : 'Choose local or approved cloud answers. Only your current text goes to OpenAI by default; local memory stays on this Mac.';
+  $('assistant-tier').disabled = mode === 'local';
+  $('assistant-input-cap').disabled = mode === 'local';
+  $('assistant-cloud-history').disabled = mode === 'local';
+  $('assistant-model').disabled = mode === 'frontier';
+  $('assistant-route-note').textContent = mode === 'local' ? 'Local only. Your chat stays on this Mac.'
+    : mode === 'smart' ? cloudConfigured ? 'Simple requests stay local. Complex text may go to OpenAI, but only after your approval.' : 'No cloud key configured: Smart stays local.'
+    : cloudConfigured ? 'Text-only OpenAI chat. Each request needs approval; local tool switches do not run in Frontier mode.' : 'Set OPENAI_API_KEY and restart Imagine to use Frontier.';
+  $('assistant-submit').innerHTML = `${mode === 'local' ? 'Ask locally' : mode === 'smart' ? 'Ask smartly' : 'Ask frontier'} <kbd>⌘↵</kbd>`;
+}
+$('assistant-mode').onchange = updateAssistantRoute;
+async function loadRouterStatus() {
+  try {
+    const res = await api('/api/assistant/router');
+    if (!res.ok) throw new Error();
+    const info = await res.json();
+    cloudConfigured = info.configured;
+    $('assistant-budget').textContent = info.configured ? `Cloud session: ${info.sessionTokens.toLocaleString()} / ${info.sessionLimit.toLocaleString()} tokens used. Provider billing limits are separate.` : 'Cloud off: set OPENAI_API_KEY in Terminal and restart Imagine to enable it.';
+  } catch { $('assistant-budget').textContent = 'Cloud status unavailable.'; }
+  updateAssistantRoute();
+}
 function addAssistantTurn(role, content) {
   const box = document.createElement('div');
   box.className = 'assistant-turn ' + role;
@@ -893,10 +978,12 @@ $('assistant').onsubmit = async (e) => {
   try {
     await stream('/api/assistant/chat', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt, history, model: $('assistant-model').value, deep: $('assistant-deep').checked, web: $('assistant-web').checked, workers: $('assistant-workers').checked, projectFiles: $('assistant-project').checked, computer: $('assistant-computer').checked, whatsapp: $('assistant-whatsapp').checked }),
+      body: JSON.stringify({ prompt, history, model: $('assistant-model').value, mode: $('assistant-mode').value, frontierTier: $('assistant-tier').value, cloudHistory: $('assistant-cloud-history').checked, maxOutputTokens: Number($('assistant-output-cap').value), maxInputTokens: Number($('assistant-input-cap').value), deep: $('assistant-deep').checked, web: $('assistant-web').checked, workers: $('assistant-workers').checked, projectFiles: $('assistant-project').checked, computer: $('assistant-computer').checked, whatsapp: $('assistant-whatsapp').checked }),
     }, (ev) => {
       if (ev.type === 'status') status.textContent = ev.message;
+      if (ev.type === 'route') status.textContent = `${ev.provider === 'frontier' ? 'Frontier' : 'Local'} · ${ev.model} · ${ev.reason}`;
       if (ev.type === 'tool') status.textContent = `Using ${ev.name.replaceAll('_', ' ')}…`;
+      if (ev.type === 'usage') $('assistant-budget').textContent = `Cloud session: ${ev.sessionTokens.toLocaleString()} / ${ev.sessionLimit.toLocaleString()} tokens used · last answer ${ev.inputTokens} in / ${ev.outputTokens ?? '?'} out.`;
       if (ev.type === 'answer') answer = ev.content;
       if (ev.type === 'error') throw new Error(ev.message);
       if (ev.type === 'memory' && !$('assistant-memory-list').hidden) loadAssistantMemory();
@@ -978,6 +1065,7 @@ async function loadModels() {
 loadModels();
 loadGallery();
 loadAssistantModels();
+loadRouterStatus();
 </script>
 </body>
 </html>
