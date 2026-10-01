@@ -2,7 +2,9 @@
 
 Imagine's **Assist** tab adds a local language model to the image studio. It can help with reasoning, writing, coding and research. The model runs through Ollama on your Mac; optional tools give it carefully scoped access to the web, saved memory, this project's files, the screen and WhatsApp.
 
-The first-visit popup introduces **Create**, **Edit** and **Assist**; reopen it any time with **? What can I do**. Select **Assist** to open the model picker and tool switches. Local use needs no cloud language-model account.
+Imagine opens into **Chat**. The sidebar holds New conversation, saved conversations and search; **Create** and **Edit** open the image studio. Open the model/settings control beneath the composer to change models, routes, budgets or tools. **? What can I do** opens the capability guide. Local use needs no cloud language-model account.
+
+Enter sends a message; Shift + Enter adds a line. Local answers stream as they are generated, and formatted responses can contain headings, lists, links and copyable code blocks. Conversations and drafts survive a reload in the same browser. **Stop** cancels the ongoing request and clears pending approvals; completed computer actions or WhatsApp sends are not rolled back. Expand a response's details to see its route, tool names and status messages.
 
 ## Get started
 
@@ -62,7 +64,7 @@ The approval prompt shows the specific proposed computer action or the WhatsApp 
 | Saved facts | `~/.imagine/assistant-memory.json` on this Mac; view/remove them in Assist |
 | WhatsApp pairing credentials | `~/.imagine/whatsapp-auth/` on this Mac; connecting also exchanges data with WhatsApp |
 | Recent received WhatsApp text | At most the latest 30 messages in the running app's memory |
-| Chat conversation | Current browser page session; reloading starts a new transcript |
+| Chat conversation and drafts | This browser's local storage under `imagine-conversations-v1`; survive reloads, removable from the sidebar or by clearing browser data |
 | Web lookup | Wikipedia or, if configured, Brave Search; reading a URL contacts that website |
 | Approved frontier text chat | Current message goes to OpenAI; up to 12 previous chat turns only if you opt in; `store: false` is requested |
 | Project files and screenshots | Given to the local model only when the relevant tool is enabled and called |
@@ -77,3 +79,5 @@ WhatsApp sending and macOS computer actions require your own account/permissions
 The frontier route is tested with mocked API responses, not your credentials or account. A provider error, account limit or model unavailability is reported in the chat; Imagine does not silently switch to another paid model.
 
 For image models, photo editing, CLI, OpenAI-compatible API and MCP tools, return to the [main README](../README.md).
+
+For the runtime's current engineering strengths and gaps, see [the harness assessment](HARNESS.md).

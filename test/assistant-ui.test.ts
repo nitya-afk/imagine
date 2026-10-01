@@ -83,3 +83,56 @@ test('frontier routing requires per-request approval and never exposes the API k
     assert.deepEqual(calls[1]?.body.input, [{ role: 'user', content: 'Hello' }]);
   } finally { server.close(); }
 });
+
+test('disconnecting cancels a local run and lets the next queued chat finish', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'imagine-cancel-ui-'));
+  let cancelled!: () => void;
+  const cancellation = new Promise<void>(resolve => { cancelled = resolve; });
+  const { server, token } = createUiServer({
+    version: 'test', outputDir: folder, defaultModel: 'image', generate: async () => Buffer.alloc(0), listImageModels: async () => [],
+    assistant: ({ signal }) => ({ run: async (prompt, _history, emit) => {
+      if (prompt !== 'Cancel this') return 'Next run completed.';
+      emit?.({ type: 'status', message: 'Started' });
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener('abort', () => { cancelled(); reject(new Error('Aborted')); }, { once: true });
+      });
+    } }),
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const chat = (prompt: string, signal?: AbortSignal) => fetch(base + '/api/assistant/chat', { method: 'POST', headers: { 'x-imagine-token': token, 'content-type': 'application/json' }, body: JSON.stringify({ prompt }), signal });
+  try {
+    const controller = new AbortController();
+    const response = await chat('Cancel this', controller.signal);
+    const reader = response.body!.getReader(); await reader.read();
+    controller.abort();
+    await Promise.race([cancellation, new Promise<never>((_resolve, reject) => { setTimeout(() => reject(new Error('Run did not cancel')), 2000).unref(); })]);
+    const next = await chat('Next', AbortSignal.timeout(2000));
+    assert.match(await next.text(), /Next run completed/);
+  } finally { server.close(); }
+});
+
+test('disconnecting while waiting for cloud approval clears it and sends no cloud request', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'imagine-cancel-approval-'));
+  let requests = 0;
+  const { server, token } = createUiServer({
+    version: 'test', outputDir: folder, defaultModel: 'image', generate: async () => Buffer.alloc(0), listImageModels: async () => [], frontierKey: 'test-key',
+    frontierFetch: (async () => { requests++; throw new Error('Must not send'); }) as typeof fetch,
+    assistant: () => ({ run: async () => 'Queue is free.' }),
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const api = (path: string, init: RequestInit) => fetch(base + path, { ...init, headers: { 'x-imagine-token': token, 'content-type': 'application/json' } });
+  try {
+    const controller = new AbortController();
+    const response = await api('/api/assistant/chat', { method: 'POST', body: JSON.stringify({ prompt: 'Hello', mode: 'frontier' }), signal: controller.signal });
+    const reader = response.body!.getReader(), decoder = new TextDecoder();
+    let approval: { id: string } | undefined, buffer = '';
+    while (!approval) { const next = await reader.read(); if (next.done) throw new Error('No approval'); buffer += decoder.decode(next.value); approval = buffer.split('\n').filter(Boolean).map(line => JSON.parse(line)).find(event => event.type === 'approval'); }
+    controller.abort();
+    const next = await api('/api/assistant/chat', { method: 'POST', body: JSON.stringify({ prompt: 'Next' }), signal: AbortSignal.timeout(2000) });
+    assert.match(await next.text(), /Queue is free/);
+    const late = await api('/api/assistant/approve', { method: 'POST', body: JSON.stringify({ id: approval.id, allow: true }) });
+    assert.equal(late.status, 404); assert.equal(requests, 0);
+  } finally { server.close(); }
+});

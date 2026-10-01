@@ -120,6 +120,7 @@ export interface AssistantOptions {
   computer?: boolean;
   whatsapp?: WhatsAppBridge;
   approve?: (description: string) => Promise<boolean>;
+  signal?: AbortSignal;
 }
 
 export class LocalAssistant {
@@ -136,6 +137,7 @@ export class LocalAssistant {
   readonly computer: boolean;
   readonly whatsapp?: WhatsAppBridge;
   readonly approve?: (description: string) => Promise<boolean>;
+  readonly signal?: AbortSignal;
   private allowRemember = false;
 
   constructor(options: AssistantOptions = {}) {
@@ -152,9 +154,11 @@ export class LocalAssistant {
     this.computer = options.computer ?? false;
     this.whatsapp = options.whatsapp;
     this.approve = options.approve;
+    this.signal = options.signal;
   }
 
   async run(prompt: string, history: ChatMessage[] = [], emit: Event = () => {}): Promise<string> {
+    this.signal?.throwIfAborted();
     const user = prompt.trim().slice(0, 12_000);
     if (!user) throw new Error('Write a message first.');
     this.allowRemember = /\b(remember|save (?:this|that|my)|store (?:this|that|my))\b/i.test(user);
@@ -186,27 +190,38 @@ export class LocalAssistant {
       .filter((t) => this.projectFiles || !['find_project_files', 'read_project_file'].includes(t.function.name))
       .filter((t) => this.whatsapp || !t.function.name.startsWith('whatsapp_'));
     for (let turn = 0; turn < (worker ? 3 : 7); turn++) {
+      this.signal?.throwIfAborted();
       emit({ type: 'status', message: turn ? 'Working through the results…' : 'Thinking locally…' });
+      if (!worker) emit({ type: 'response_start' });
       const response = await this.fetcher(`${this.host}/api/chat`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: this.model, messages, tools, stream: false, think: this.deep, keep_alive: '5m', options: { num_ctx: 8192, num_predict: this.maxOutputTokens, temperature: 0.35 } }),
-        signal: AbortSignal.timeout(worker ? 180_000 : 300_000),
+        body: JSON.stringify({ model: this.model, messages, tools, stream: true, think: this.deep, keep_alive: '5m', options: { num_ctx: 8192, num_predict: this.maxOutputTokens, temperature: 0.35 } }),
+        signal: this.withTimeout(worker ? 180_000 : 300_000),
       });
-      const body = await response.json() as { message?: ChatMessage; error?: string };
-      if (!response.ok || body.error) throw new Error(body.error ?? `Ollama returned HTTP ${response.status}`);
-      const answer = body.message;
-      if (!answer) throw new Error('The model returned no message.');
+      const answer = await this.readResponse(response, worker ? undefined : emit);
       messages.push(answer);
       const calls = answer.tool_calls ?? [];
       if (!calls.length) return answer.content?.trim() || 'The model returned an empty answer.';
-      for (const call of calls.slice(0, 3)) {
-        const name = call.function.name;
+      for (const [index, call] of calls.entries()) {
+        this.signal?.throwIfAborted();
+        const name = call?.function?.name ?? '(invalid tool)';
         emit({ type: 'tool', name });
         let result: string | { content: string; images?: string[] };
         try {
+          // Enforce the exact offered tool set here; a model can invent any name.
+          const tool = tools.find(t => t.function.name === name);
+          if (!tool) throw new Error(`Unknown or disabled tool: ${name}`);
+          if (index >= 3) throw new Error('At most three tools can run in one model turn.');
           const args = typeof call.function.arguments === 'string' ? JSON.parse(call.function.arguments) : call.function.arguments;
+          if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tool arguments must be an object.');
+          for (const required of tool.function.parameters.required) if (!(required in args)) throw new Error(`Missing tool argument: ${required}`);
+          for (const [key, rule] of Object.entries(tool.function.parameters.properties)) {
+            const type = (rule as { type?: string }).type;
+            if (key in args && (type === 'string' && typeof args[key] !== 'string' || type === 'integer' && !Number.isInteger(args[key]))) throw new Error(`Invalid tool argument: ${key}`);
+          }
           result = await this.call(name, args, emit, worker);
-        } catch (error) { result = `Tool error: ${error instanceof Error ? error.message : String(error)}`; }
+          this.signal?.throwIfAborted();
+        } catch (error) { this.signal?.throwIfAborted(); result = `Tool error: ${error instanceof Error ? error.message : String(error)}`; }
         const content = typeof result === 'string' ? result : result.content;
         messages.push({ role: 'tool', tool_name: name, content: content.slice(0, 12_000), images: typeof result === 'string' ? undefined : result.images });
       }
@@ -214,7 +229,52 @@ export class LocalAssistant {
     return 'I reached the tool-use limit for this request. Try a narrower question.';
   }
 
+  private withTimeout(ms: number): AbortSignal {
+    const timeout = AbortSignal.timeout(ms);
+    return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
+  }
+
+  private async readResponse(response: Response, emit?: Event): Promise<ChatMessage> {
+    if (!response.ok || !response.headers.get('content-type')?.includes('ndjson')) {
+      const body = await response.json() as { message?: ChatMessage; error?: string };
+      if (!response.ok || body.error) throw new Error(body.error ?? `Ollama returned HTTP ${response.status}`);
+      if (!body.message) throw new Error('The model returned no message.');
+      return body.message;
+    }
+    if (!response.body) throw new Error('The model returned no stream.');
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    const answer: ChatMessage = { role: 'assistant', content: '' };
+    let buffer = '', done = false;
+    const consume = (line: string) => {
+      if (!line.trim()) return;
+      const chunk = JSON.parse(line) as { message?: Partial<ChatMessage>; error?: string; done?: boolean };
+      if (chunk.error) throw new Error(chunk.error);
+      if (chunk.message?.content) { answer.content += chunk.message.content; emit?.({ type: 'delta', content: chunk.message.content }); }
+      if (chunk.message?.thinking) answer.thinking = (answer.thinking ?? '') + chunk.message.thinking;
+      if (chunk.message?.tool_calls) {
+        answer.tool_calls = [...(answer.tool_calls ?? []), ...chunk.message.tool_calls];
+        if (answer.tool_calls.length > 32) throw new Error('The model returned too many tool calls.');
+      }
+      if (chunk.done) done = true;
+    };
+    try {
+      for (;;) {
+        this.signal?.throwIfAborted();
+        const next = await reader.read();
+        if (next.done) break;
+        buffer += decoder.decode(next.value, { stream: true });
+        if (buffer.length > 1_000_000) throw new Error('The model stream contains an oversized message.');
+        let end;
+        while ((end = buffer.indexOf('\n')) >= 0) { consume(buffer.slice(0, end)); buffer = buffer.slice(end + 1); }
+      }
+      buffer += decoder.decode(); consume(buffer);
+      if (!done) throw new Error('The model stream ended before completion.');
+      return answer;
+    } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  }
+
   private async call(name: string, args: Record<string, unknown>, emit: Event, worker: boolean): Promise<string | { content: string; images?: string[] }> {
+    this.signal?.throwIfAborted();
     const value = (key: string) => String(args?.[key] ?? '').trim();
     if (name === 'remember' && !worker) {
       if (!this.allowRemember) throw new Error('Memory can only be saved when the user asks to remember something.');
@@ -260,6 +320,7 @@ export class LocalAssistant {
       if (!['open_app', 'type_text', 'press_key', 'click', 'view_screen'].includes(kind)) throw new Error('Unsupported computer action.');
       const action = { action: kind, app: value('app'), text: value('text'), key: value('key'), x: Number(args?.x), y: Number(args?.y) } as ComputerAction;
       if (!this.approve || !(await this.approve(describeComputerAction(action)))) return 'The user did not approve this computer action.';
+      this.signal?.throwIfAborted();
       return performComputerAction(action);
     }
     if (name === 'whatsapp_recent' && this.whatsapp) return JSON.stringify(this.whatsapp.messages());
@@ -267,6 +328,7 @@ export class LocalAssistant {
       const recipient = value('recipient');
       const message = value('text');
       if (!this.approve || !(await this.approve(`Send WhatsApp to +${recipient}: ${message}`))) return 'The user did not approve this WhatsApp message.';
+      this.signal?.throwIfAborted();
       await this.whatsapp.send(recipient, message);
       return `Sent to +${recipient}.`;
     }
@@ -286,14 +348,14 @@ export class LocalAssistant {
     const braveKey = process.env.BRAVE_SEARCH_API_KEY;
     if (braveKey) {
       const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query.slice(0, 200))}&count=5`;
-      const response = await this.fetcher(url, { redirect: 'error', signal: AbortSignal.timeout(15_000), headers: { 'x-subscription-token': braveKey, accept: 'application/json' } });
+      const response = await this.fetcher(url, { redirect: 'error', signal: this.withTimeout(15_000), headers: { 'x-subscription-token': braveKey, accept: 'application/json' } });
       if (!response.ok) throw new Error(`Brave Search failed (${response.status}).`);
       const data = await response.json() as { web?: { results?: Array<{ title: string; url: string; description?: string }> } };
       return JSON.stringify({ provider: 'Brave Search', results: (data.web?.results ?? []).map((item) => ({ title: item.title, url: item.url, snippet: item.description?.slice(0, 500) })) });
     }
     // Wikipedia's public API needs no account; Brave broadens coverage when a user supplies a key.
     const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query.slice(0, 200))}&srlimit=5&format=json&origin=*`;
-    const response = await this.fetcher(url, { redirect: 'error', signal: AbortSignal.timeout(15_000), headers: { 'user-agent': 'ImagineLocal/1.6 (personal research)' } });
+    const response = await this.fetcher(url, { redirect: 'error', signal: this.withTimeout(15_000), headers: { 'user-agent': 'ImagineLocal/1.6 (personal research)' } });
     if (!response.ok) throw new Error(`Search failed (${response.status}).`);
     const data = await response.json() as { query?: { search?: Array<{ title: string; pageid: number; snippet: string }> } };
     const results = (data.query?.search ?? []).map((item) => ({ title: item.title, url: `https://en.wikipedia.org/?curid=${item.pageid}`, snippet: stripHtml(item.snippet).slice(0, 500) }));
@@ -311,6 +373,7 @@ export class LocalAssistant {
       const address = addresses[0]!;
       const request = httpsRequest(url, {
         method: 'GET',
+        signal: this.withTimeout(15_000),
         headers: { 'user-agent': 'ImagineLocal/1.6 (personal research)', accept: 'text/html,text/plain,application/json' },
         lookup: (_host, _options, callback) => callback(null, address.address, address.family),
       }, (response) => {

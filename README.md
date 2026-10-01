@@ -2,7 +2,7 @@
 
 **Generate and edit images on your Mac, fully offline.** It uses FLUX.2 Klein image models on Apple silicon, from the terminal, from any app that speaks the OpenAI API, or from AI assistants over MCP. Image generation uploads nothing. The optional Assist tab can use internet search, WhatsApp or a frontier model when you enable those features.
 
-The browser opens with three clear paths: **Create** images, **Edit** photos, or **Assist** with a local language model. The first screen also points to the terminal, image API, MCP, model import and LoRA features.
+The browser opens into a conversation: saved chats on the left, a quiet writing space, and a composer at the bottom. **Create** and **Edit** open the image studio. Model, routing and tool controls live behind the composer's settings button; **What can I do** opens the capability guide.
 
 ```bash
 imagine "a cat blasting off from the sun, cinematic"
@@ -182,9 +182,10 @@ Prefer clicking to typing? `imagine ui` opens a small app in your browser:
 imagine ui
 ```
 
-![imagine ui: two images from one prompt, and the contact sheet of recent images](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/ui-create.jpg)
+![Imagine's chat workspace, with local conversations and a centred composer](docs/examples/ui-chat.png)
 
-- **First screen**: a first-visit guide explains Create, Edit, Assist, optional frontier routing and approval boundaries. Reopen it any time with **? What can I do**; the three-card overview remains behind it.
+- **First screen**: a chat workspace with New conversation, searchable saved chats, starter prompts and a bottom composer. Enter sends; Shift + Enter adds a line. **? What can I do** opens the guide when you need it.
+- **Conversations**: saved locally in this browser, including drafts and response activity. Local answers stream as they arrive. Responses support headings, lists, links and code blocks with copy controls. **Stop** cancels a running request and pending approvals; actions already completed are not undone.
 - **Create**: write a prompt, pick a frame (square, portrait, landscape, wide), make up to four at once, and optionally let a local model enhance the prompt.
 - **Edit**: drop in a photo (or paste one, or pick one you made), say what should change, and watch each planned step run. Quick buttons start a remove, add, background, face or style edit. You can also extend the frame to 16:9, 4:3, 1:1 or 9:16, or swap in a face from a second photo.
 - **Before and after**: drag the slider to compare, then **Keep editing** to carry on from the result.
@@ -212,7 +213,7 @@ Before an image job, Imagine also asks Ollama to release any chat model used in 
 For a community variant trained to refuse fewer prompts, install `ollama pull huihui_ai/qwen3.5-abliterated:4b` and select **less-filtered** in the model picker. It is optional: the official model remains the default because the community tuning has not been shown to improve reasoning or coding accuracy.
 
 - **Internet lookup** can search Wikipedia and read public HTTPS pages without an account. For broad, current web search, set `BRAVE_SEARCH_API_KEY` before starting Imagine; otherwise obscure or breaking news may require you to give it a URL. Turn the option off for fully offline use.
-- **Memory** saves facts only when you ask it to remember them. Facts are stored in `~/.imagine/assistant-memory.json`; you can view and remove them in the Assist tab. Chat history lasts for the current page session.
+- **Memory** saves facts only when you ask it to remember them. Facts are stored in `~/.imagine/assistant-memory.json`; view/remove them in chat settings. Conversations are stored in this browser's local storage and survive page reloads. Clearing browser data removes them; inference uses the most recent 12 messages.
 - **Specialist workers** are optional and run sequentially through the same model to conserve unified memory.
 - **Project files** are read-only and off by default. Enable them to let the assistant inspect files under the folder where you started `imagine ui`; symlinks cannot escape that folder.
 - **Computer control** is off by default. Turn it on to allow screen viewing, app opening, clicks, typing and key presses; the browser asks for approval before every action. macOS may ask for Accessibility and Screen Recording permissions. There is no arbitrary shell-command tool.
@@ -221,6 +222,8 @@ For a community variant trained to refuse fewer prompts, install `ollama pull hu
 Model capabilities and refusal behavior come from the model itself; a small local model cannot honestly be guaranteed to be “unrestricted” or to match a frontier model at reasoning. This integration uses the released model weights without fine-tuning. Tool use, memory and computer access are application features, not changes to the weights; fine-tuning would need a defined dataset and separate evaluation.
 
 The Assist tab is not an unattended computer agent: it cannot run arbitrary shell commands or edit project files, and each computer action and outgoing WhatsApp message needs approval. See [the full Assist guide](docs/ASSIST.md) for example requests, setup and data locations.
+
+The runtime is a bounded local assistant harness. It is not yet a proven production agent platform: durable run recovery, context compaction, sandboxed coding execution and task-quality evaluations remain to be built. See the [harness assessment](docs/HARNESS.md) for what is implemented and what remains.
 
 ### Optional frontier routing
 

@@ -49,6 +49,7 @@ interface FrontierOptions {
   maxOutputTokens: number;
   budget: TokenBudget;
   fetcher?: typeof fetch;
+  signal?: AbortSignal;
 }
 
 export async function answerWithFrontier(
@@ -61,26 +62,29 @@ export async function answerWithFrontier(
   if (!Number.isInteger(options.maxInputTokens) || options.maxInputTokens < 256 || options.maxInputTokens > 16_000) throw new Error('Input cap must be 256–16000 tokens.');
   if (!Number.isInteger(options.maxOutputTokens) || options.maxOutputTokens < 128 || options.maxOutputTokens > 4096) throw new Error('Answer cap must be 128–4096 tokens.');
   const fetcher = options.fetcher ?? fetch;
+  options.signal?.throwIfAborted();
+  const withTimeout = (ms: number) => options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms);
   const input = [...history.filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12)
     .map((m) => ({ role: m.role, content: m.content })), { role: 'user', content: prompt }];
   const base = { model: options.model, instructions: 'You are Imagine Assist. Be accurate and candid about uncertainty. Do not claim to have used tools or accessed local files.', input };
   const headers = { authorization: `Bearer ${options.key}`, 'content-type': 'application/json' };
   emit({ type: 'status', message: 'Counting cloud input tokens…' });
   const counted = await fetcher('https://api.openai.com/v1/responses/input_tokens', {
-    method: 'POST', headers, body: JSON.stringify(base), signal: AbortSignal.timeout(30_000),
+    method: 'POST', headers, body: JSON.stringify(base), signal: withTimeout(30_000),
   });
   const countBody = await counted.json() as { input_tokens?: number; error?: { message?: string } };
   if (!counted.ok || !Number.isSafeInteger(countBody.input_tokens)) throw new Error(`Could not count cloud input tokens: ${countBody.error?.message ?? `HTTP ${counted.status}`}`);
   const inputTokens = countBody.input_tokens!;
   if (inputTokens > options.maxInputTokens) throw new Error(`This request needs ${inputTokens} input tokens, above your ${options.maxInputTokens}-token cap. Shorten the chat or raise the cap.`);
   const reserved = inputTokens + options.maxOutputTokens;
+  options.signal?.throwIfAborted();
   options.budget.reserve(reserved);
   emit({ type: 'status', message: `Asking ${options.model} (up to ${options.maxOutputTokens} output tokens)…` });
   // Keep the full reservation if a request times out: it may have completed remotely.
   const response = await fetcher('https://api.openai.com/v1/responses', {
     method: 'POST', headers,
     body: JSON.stringify({ ...base, store: false, reasoning: { effort: 'medium' }, max_output_tokens: options.maxOutputTokens }),
-    signal: AbortSignal.timeout(180_000),
+    signal: withTimeout(180_000),
   });
   const body = await response.json() as {
     output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;

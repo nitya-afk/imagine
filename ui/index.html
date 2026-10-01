@@ -328,25 +328,28 @@
   }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
+<link rel="stylesheet" href="/assets/chat.css">
 </head>
-<body>
+<body class="assistant-mode">
 <div class="app">
   <header>
+    <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle conversations" aria-expanded="false">☰</button>
     <div class="mark">imagine<b>.</b></div>
     <span class="edge">v__IMAGINE_VERSION__ · local · private</span>
+    <span class="chat-heading" id="chat-heading">New conversation</span>
     <span class="spacer"></span>
     <button type="button" id="guide-open" class="guide-open">? What can I do</button>
     <label class="model-pick">Model <select id="model" aria-label="Model"></select></label>
   </header>
 
-  <aside>
+  <aside id="sidebar">
     <div class="tabs" role="tablist">
-      <button role="tab" id="tab-create" aria-selected="true" aria-controls="create">Create</button>
+      <button role="tab" id="tab-create" aria-selected="false" aria-controls="create">Create</button>
       <button role="tab" id="tab-edit" aria-selected="false" aria-controls="edit">Edit</button>
-      <button role="tab" id="tab-assistant" aria-selected="false" aria-controls="assistant">Assist</button>
+      <button role="tab" id="tab-assistant" aria-selected="true" aria-controls="assistant">Chat</button>
     </div>
 
-    <form id="create">
+    <form id="create" hidden>
       <h2>Describe it, <em>and it develops.</em></h2>
       <label class="field">
         <span class="label">Prompt</span>
@@ -426,8 +429,9 @@
       <button class="go" type="submit">Apply edits <kbd>⌘↵</kbd></button>
     </form>
 
-    <form id="assistant" hidden>
-      <h2>Think with <em>your Mac.</em></h2>
+    <dialog id="assistant-settings" class="guide-modal assistant-settings" aria-labelledby="assistant-settings-title">
+      <div class="guide-head"><h2 id="assistant-settings-title">Make it work your way.</h2><button type="button" class="guide-close" id="assistant-settings-close" aria-label="Close settings">×</button></div>
+      <div class="guide-body">
       <div class="assistant-route-grid">
         <label><span class="label">Thinking route</span><select id="assistant-mode"><option value="local">Local only · private</option><option value="smart">Smart · ask before cloud</option><option value="frontier">Frontier · ask before cloud</option></select></label>
         <label><span class="label">Frontier tier</span><select id="assistant-tier"><option value="auto">Auto choose</option><option value="fast">Fast · Luna</option><option value="balanced">Balanced · Sol</option><option value="best">Best · Astra</option></select></label>
@@ -440,7 +444,6 @@
         <label><span class="label">Max cloud input tokens</span><input type="number" id="assistant-input-cap" min="256" max="16000" value="4000"></label>
       </div>
       <div class="assistant-route-note" id="assistant-budget">Cloud is off until you configure an API key and approve a request.</div>
-      <label class="field"><span class="label">Ask anything</span><textarea id="assistant-prompt" placeholder="Research a question, reason through a problem, review code, or write something…" required></textarea></label>
       <div class="assistant-options">
         <label class="toggle"><input type="checkbox" id="assistant-deep"><span>Deep reasoning<small>more thorough, but slower</small></span></label>
         <label class="toggle"><input type="checkbox" id="assistant-web" checked><span>Internet lookup<small>public web pages and encyclopedia search</small></span></label>
@@ -450,12 +453,22 @@
         <label class="toggle"><input type="checkbox" id="assistant-whatsapp"><span>WhatsApp access<small>approve each outgoing message</small></span></label>
       </div>
       <div class="assistant-connect"><div id="whatsapp-status">WhatsApp is not connected.</div><button type="button" id="whatsapp-connect">Connect WhatsApp</button><img id="whatsapp-qr" alt="WhatsApp pairing QR code" hidden></div>
-      <button class="go" type="submit" id="assistant-submit">Ask locally <kbd>⌘↵</kbd></button>
       <div class="assistant-memory"><button type="button" id="assistant-memory-toggle">Saved memory</button><div class="assistant-memory-list" id="assistant-memory-list" hidden></div></div>
-    </form>
+      </div>
+    </dialog>
+    <div class="chat-sidebar">
+      <div class="mark chat-brand">imagine<b>.</b></div>
+      <button type="button" class="new-chat" id="new-chat"><span>＋</span> New conversation</button>
+      <section class="chat-history-section" aria-label="Saved conversations">
+        <div class="chat-history-heading">Your conversations</div>
+        <input type="text" id="chat-search" class="chat-search" placeholder="Search conversations" aria-label="Search conversations">
+        <div class="chat-list" id="chat-list"></div>
+      </section>
+      <div class="chat-sidebar-foot"><strong>On your machine.</strong><span id="chat-storage-status">Conversations saved in this browser.</span></div>
+    </div>
   </aside>
 
-  <main id="stage">
+  <main id="stage" hidden>
     <div class="home">
       <div class="edge">Welcome to your local studio</div>
       <h1>Make it. Change it. <em>Think it through.</em></h1>
@@ -469,13 +482,31 @@
     </div>
   </main>
 
-  <main id="assistant-stage" hidden aria-live="polite">
-    <div class="assistant-intro" id="assistant-intro">
-      <div class="edge" id="assistant-intro-label">your local thinking room</div>
-      <h1 id="assistant-intro-title">A second mind,<br><em>on this machine.</em></h1>
-      <p id="assistant-intro-copy">Ask for reasoning, writing, coding help, or current information. Memory stays on this Mac; internet access is optional.</p>
-      <div class="capabilities"><span>local model</span><span>private memory</span><span>web lookup</span><span>specialist workers</span></div>
+  <main id="assistant-stage" aria-label="Conversation">
+    <div class="chat-scroll" id="chat-scroll">
+      <div class="assistant-intro" id="assistant-intro">
+        <div class="assistant-symbol" aria-hidden="true">✳</div>
+        <div class="edge" id="assistant-intro-label">A little room for big ideas.</div>
+        <h1 id="assistant-intro-title">What’s on your mind?</h1>
+        <p id="assistant-intro-copy">Think it through, write something good, or untangle your code. Start with a conversation.</p>
+        <div class="chat-suggestions">
+          <button type="button" data-suggestion="Help me think through a difficult decision. Ask me what you need to know.">Think it through</button>
+          <button type="button" data-suggestion="Help me write something. Ask about the audience, purpose, and tone.">Write something</button>
+          <button type="button" data-suggestion="Help me debug some code. Ask me for the code and the error.">Work on code</button>
+          <button type="button" id="welcome-guide">Explore what’s possible ↗</button>
+        </div>
+      </div>
+      <div class="assistant-messages" id="assistant-messages" role="log" aria-live="polite"></div>
     </div>
+    <form id="assistant" class="assistant-composer">
+      <textarea id="assistant-prompt" aria-label="Message Imagine" placeholder="Ask Imagine anything…" required rows="2"></textarea>
+      <div class="composer-bottom">
+        <button type="button" class="composer-settings" id="assistant-settings-open"><span id="assistant-model-summary">Local model</span> <span aria-hidden="true">⌄</span></button>
+        <button type="button" class="assistant-send" id="assistant-stop" aria-label="Stop response" title="Stop response" hidden>■</button>
+        <button type="submit" class="assistant-send" id="assistant-submit" aria-label="Send message" title="Send message">↑</button>
+      </div>
+    </form>
+    <p class="composer-hint" id="composer-hint">Local by default · Enter to send · Shift + Enter for a new line</p>
   </main>
 
   <footer>
@@ -522,7 +553,7 @@ function openGuide() { if (!guide.open) guide.showModal(); try { localStorage.se
 $('guide-open').onclick = openGuide;
 $('guide-close').onclick = $('guide-done').onclick = () => guide.close();
 guide.addEventListener('click', (e) => { if (e.target === guide) guide.close(); });
-try { if (!localStorage.getItem('imagine-guide-seen-v1')) openGuide(); } catch { openGuide(); }
+$('welcome-guide').onclick = openGuide;
 
 /** Read a newline-delimited JSON stream, calling onEvent for each line as it arrives. */
 async function stream(path, init, onEvent) {
@@ -534,17 +565,21 @@ async function stream(path, init, onEvent) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let n;
-    while ((n = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, n).trim();
-      buffer = buffer.slice(n + 1);
-      if (line) onEvent(JSON.parse(line));
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let n;
+      while ((n = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, n).trim();
+        buffer = buffer.slice(n + 1);
+        if (line) onEvent(JSON.parse(line));
+      }
     }
-  }
+    buffer += decoder.decode();
+    if (buffer.trim()) onEvent(JSON.parse(buffer));
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
 // ── Tabs and segmented controls ──
@@ -554,9 +589,10 @@ function selectTab(name) {
     $(t).hidden = t !== name;
   }
   document.body.classList.toggle('assistant-mode', name === 'assistant');
+  document.body.classList.remove('sidebar-open');
+  $('sidebar-toggle').setAttribute('aria-expanded', 'false');
   stage.hidden = name === 'assistant';
   $('assistant-stage').hidden = name !== 'assistant';
-  if (name === 'assistant') loadWhatsAppStatus();
 }
 $('tab-create').onclick = () => selectTab('create');
 $('tab-edit').onclick = () => selectTab('edit');
@@ -772,6 +808,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('lightbo
 function setBusy(busy) {
   state.busy = busy;
   document.querySelectorAll('.go').forEach((b) => { b.disabled = busy; });
+  $('assistant-submit').disabled = busy;
 }
 async function runGenerate(body) {
   if (state.busy) return;
@@ -865,139 +902,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── Local assistant ──
-const assistantHistory = [];
-let cloudConfigured = false;
-function updateAssistantRoute() {
-  const mode = $('assistant-mode').value;
-  if ($('assistant-intro-label')) $('assistant-intro-label').textContent = mode === 'local' ? 'your local thinking room' : mode === 'smart' ? 'local first · frontier when approved' : 'frontier intelligence · with approval';
-  if ($('assistant-intro-title')) $('assistant-intro-title').innerHTML = mode === 'local' ? 'A second mind,<br><em>on this machine.</em>' : 'A second mind,<br><em>on your terms.</em>';
-  if ($('assistant-intro-copy')) $('assistant-intro-copy').textContent = mode === 'local' ? 'Ask for reasoning, writing, coding help, or current information. Memory stays on this Mac; internet access is optional.' : 'Choose local or approved cloud answers. Only your current text goes to OpenAI by default; local memory stays on this Mac.';
-  $('assistant-tier').disabled = mode === 'local';
-  $('assistant-input-cap').disabled = mode === 'local';
-  $('assistant-cloud-history').disabled = mode === 'local';
-  $('assistant-model').disabled = mode === 'frontier';
-  $('assistant-route-note').textContent = mode === 'local' ? 'Local only. Your chat stays on this Mac.'
-    : mode === 'smart' ? cloudConfigured ? 'Simple requests stay local. Complex text may go to OpenAI, but only after your approval.' : 'No cloud key configured: Smart stays local.'
-    : cloudConfigured ? 'Text-only OpenAI chat. Each request needs approval; local tool switches do not run in Frontier mode.' : 'Set OPENAI_API_KEY and restart Imagine to use Frontier.';
-  $('assistant-submit').innerHTML = `${mode === 'local' ? 'Ask locally' : mode === 'smart' ? 'Ask smartly' : 'Ask frontier'} <kbd>⌘↵</kbd>`;
-}
-$('assistant-mode').onchange = updateAssistantRoute;
-async function loadRouterStatus() {
-  try {
-    const res = await api('/api/assistant/router');
-    if (!res.ok) throw new Error();
-    const info = await res.json();
-    cloudConfigured = info.configured;
-    $('assistant-budget').textContent = info.configured ? `Cloud session: ${info.sessionTokens.toLocaleString()} / ${info.sessionLimit.toLocaleString()} tokens used. Provider billing limits are separate.` : 'Cloud off: set OPENAI_API_KEY in Terminal and restart Imagine to enable it.';
-  } catch { $('assistant-budget').textContent = 'Cloud status unavailable.'; }
-  updateAssistantRoute();
-}
-function addAssistantTurn(role, content) {
-  const box = document.createElement('div');
-  box.className = 'assistant-turn ' + role;
-  const speaker = document.createElement('span');
-  speaker.className = 'speaker';
-  speaker.textContent = role === 'user' ? 'You' : 'Imagine';
-  box.append(speaker, document.createTextNode(content));
-  $('assistant-intro')?.remove();
-  $('assistant-stage').append(box);
-  box.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  return box;
-}
-async function loadAssistantModels() {
-  const select = $('assistant-model');
-  try {
-    const res = await api('/api/assistant/models');
-    if (!res.ok) throw new Error();
-    const info = await res.json();
-    const label = (name) => name === 'qwen3.5:4b' ? 'Qwen 3.5 4B · official' : name === 'huihui_ai/qwen3.5-abliterated:4b' ? 'Qwen 3.5 4B · less-filtered' : name === 'qwen3.5:9b' ? 'Qwen 3.5 9B · official' : name;
-    select.innerHTML = info.models.map((m) => `<option value="${esc(m.name)}">${esc(label(m.name))} · ${(m.size / 1e9).toFixed(1)} GB</option>`).join('');
-    if (info.defaultModel) select.value = info.defaultModel;
-    if (info.projectDir) $('assistant-project-path').textContent = info.projectDir;
-    if (!info.models.length) select.innerHTML = '<option value="qwen3.5:4b">Install qwen3.5:4b in Ollama first</option>';
-  } catch { select.innerHTML = '<option value="qwen3.5:4b">qwen3.5:4b</option>'; }
-}
-async function loadAssistantMemory() {
-  const list = $('assistant-memory-list');
-  const res = await api('/api/assistant/memory');
-  if (!res.ok) return;
-  const { memories } = await res.json();
-  list.innerHTML = '';
-  if (!memories.length) { list.textContent = 'Nothing saved yet. Ask me to remember something.'; return; }
-  for (const item of memories) {
-    const row = document.createElement('div');
-    const text = document.createElement('span');
-    text.textContent = item.text;
-    const remove = document.createElement('button');
-    remove.textContent = 'Remove';
-    remove.onclick = async () => { await api('/api/assistant/memory/' + encodeURIComponent(item.id), { method: 'DELETE' }); loadAssistantMemory(); };
-    row.append(text, remove);
-    list.append(row);
-  }
-}
-async function loadWhatsAppStatus() {
-  try {
-    const res = await api('/api/assistant/whatsapp');
-    if (!res.ok) return;
-    const info = await res.json();
-    $('whatsapp-status').textContent = info.state === 'connected' ? 'WhatsApp connected on this Mac.' : info.state === 'qr' ? 'Scan this in WhatsApp → Linked devices.' : info.state === 'connecting' ? 'Waiting for WhatsApp…' : 'WhatsApp is not connected.';
-    $('whatsapp-qr').hidden = !info.qr;
-    if (info.qr) $('whatsapp-qr').src = info.qr;
-    $('whatsapp-connect').hidden = info.state === 'connected' || info.state === 'connecting' || info.state === 'qr';
-  } catch { $('whatsapp-status').textContent = 'WhatsApp status unavailable.'; }
-}
-$('whatsapp-connect').onclick = async () => {
-  $('whatsapp-status').textContent = 'Starting WhatsApp pairing…';
-  try {
-    const res = await api('/api/assistant/whatsapp/connect', { method: 'POST' });
-    if (!res.ok) throw new Error((await res.json()).error);
-    loadWhatsAppStatus();
-  } catch (err) { $('whatsapp-status').textContent = `Could not connect: ${err.message}`; }
-};
-setInterval(() => { if (!$('assistant').hidden) loadWhatsAppStatus(); }, 4000);
-$('assistant-memory-toggle').onclick = () => {
-  const list = $('assistant-memory-list');
-  list.hidden = !list.hidden;
-  if (!list.hidden) loadAssistantMemory();
-};
-$('assistant').onsubmit = async (e) => {
-  e.preventDefault();
-  if (state.busy) return;
-  const prompt = $('assistant-prompt').value.trim();
-  if (!prompt) return;
-  const history = assistantHistory.slice(-12);
-  addAssistantTurn('user', prompt);
-  $('assistant-prompt').value = '';
-  setBusy(true);
-  const status = document.createElement('div');
-  status.className = 'assistant-status';
-  status.textContent = 'Thinking locally…';
-  $('assistant-stage').append(status);
-  let answer = '';
-  try {
-    await stream('/api/assistant/chat', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt, history, model: $('assistant-model').value, mode: $('assistant-mode').value, frontierTier: $('assistant-tier').value, cloudHistory: $('assistant-cloud-history').checked, maxOutputTokens: Number($('assistant-output-cap').value), maxInputTokens: Number($('assistant-input-cap').value), deep: $('assistant-deep').checked, web: $('assistant-web').checked, workers: $('assistant-workers').checked, projectFiles: $('assistant-project').checked, computer: $('assistant-computer').checked, whatsapp: $('assistant-whatsapp').checked }),
-    }, (ev) => {
-      if (ev.type === 'status') status.textContent = ev.message;
-      if (ev.type === 'route') status.textContent = `${ev.provider === 'frontier' ? 'Frontier' : 'Local'} · ${ev.model} · ${ev.reason}`;
-      if (ev.type === 'tool') status.textContent = `Using ${ev.name.replaceAll('_', ' ')}…`;
-      if (ev.type === 'usage') $('assistant-budget').textContent = `Cloud session: ${ev.sessionTokens.toLocaleString()} / ${ev.sessionLimit.toLocaleString()} tokens used · last answer ${ev.inputTokens} in / ${ev.outputTokens ?? '?'} out.`;
-      if (ev.type === 'answer') answer = ev.content;
-      if (ev.type === 'error') throw new Error(ev.message);
-      if (ev.type === 'memory' && !$('assistant-memory-list').hidden) loadAssistantMemory();
-      if (ev.type === 'approval') {
-        const allow = confirm(`Allow Imagine to ${ev.description}?`);
-        void api('/api/assistant/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ev.id, allow }) });
-      }
-    });
-    addAssistantTurn('agent', answer || 'The model returned no answer.');
-    assistantHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: answer });
-  } catch (err) { addAssistantTurn('agent', `Could not finish: ${err.message}`); }
-  finally { status.remove(); setBusy(false); }
-};
-
 // ── Contact sheet ──
 function filmItem(img) {
   const shot = document.createElement('div');
@@ -1064,8 +968,7 @@ async function loadModels() {
 }
 loadModels();
 loadGallery();
-loadAssistantModels();
-loadRouterStatus();
 </script>
+<script src="/assets/chat.js"></script>
 </body>
 </html>

@@ -97,3 +97,66 @@ test('WhatsApp is disconnected until the user pairs it, and cannot send before t
   await bridge.stop();
   assert.equal(bridge.status().state, 'disconnected');
 });
+
+test('a forged project tool call cannot bypass the disabled project switch', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'imagine-disabled-project-'));
+  writeFileSync(join(dir, 'private.txt'), 'This must not reach the model.');
+  const requests: Array<Record<string, any>> = [];
+  const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)); requests.push(body);
+    return new Response(JSON.stringify({ message: requests.length === 1
+      ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_project_file', arguments: { path: 'private.txt' } } }] }
+      : { role: 'assistant', content: 'Access denied.' } }));
+  }) as typeof fetch;
+  await new LocalAssistant({ projectDir: dir, fetcher, projectFiles: false, web: false }).run('Read private.txt');
+  assert.match(requests[1]!.messages.at(-1).content, /disabled tool/);
+  assert.ok(!JSON.stringify(requests).includes('This must not reach the model.'));
+});
+
+test('workers cannot execute parent computer permissions or memory writes', async () => {
+  let approvals = 0;
+  const requests: Array<Record<string, any>> = [];
+  const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)); requests.push(body);
+    const tool = (name: string, args: object) => ({ function: { name, arguments: args } });
+    const message = requests.length === 1 ? { role: 'assistant', content: '', tool_calls: [tool('delegate', { task: 'Check this', specialty: 'research' })] }
+      : requests.length === 2 ? { role: 'assistant', content: '', tool_calls: [tool('computer_action', { action: 'open_app', app: 'Notes' }), tool('remember', { fact: 'Worker changed memory' })] }
+      : { role: 'assistant', content: 'Finished.' };
+    return new Response(JSON.stringify({ message }));
+  }) as typeof fetch;
+  const dir = mkdtempSync(join(tmpdir(), 'imagine-worker-permissions-'));
+  const memory = new MemoryStore(join(dir, 'memory.json'));
+  await new LocalAssistant({ fetcher, memory, workers: true, computer: true, web: false, approve: async () => { approvals++; return false; } }).run('Remember to delegate this research');
+  assert.equal(approvals, 0);
+  assert.deepEqual(memory.list(), []);
+  assert.ok(requests[2]!.messages.filter((m: any) => m.role === 'tool').every((m: any) => /disabled tool/.test(m.content)));
+});
+
+test('local streaming preserves tool calls and thinking while emitting only answer text', async () => {
+  const requests: Array<Record<string, any>> = [], events: Array<Record<string, unknown>> = [];
+  const packet = (message: object, done = false) => JSON.stringify({ message, done }) + '\n';
+  const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)); requests.push(body);
+    const data = requests.length === 1
+      ? packet({ thinking: 'Private reasoning', content: '' }) + packet({ tool_calls: [{ function: { name: 'recall', arguments: { query: '' } } }] }, true)
+      : packet({ content: 'A streamed ' }) + packet({ content: 'answer.' }, true);
+    const bytes = new TextEncoder().encode(data);
+    return new Response(new ReadableStream({ start(stream) { stream.enqueue(bytes.slice(0, 19)); stream.enqueue(bytes.slice(19)); stream.close(); } }), { headers: { 'content-type': 'application/x-ndjson' } });
+  }) as typeof fetch;
+  const answer = await new LocalAssistant({ fetcher, web: false }).run('Say hello', [], event => events.push(event));
+  assert.equal(answer, 'A streamed answer.');
+  assert.equal(requests[0]!.stream, true);
+  assert.equal(requests[1]!.messages.at(-2).thinking, 'Private reasoning');
+  assert.equal(events.filter(event => event.type === 'delta').map(event => event.content).join(''), answer);
+  assert.ok(!JSON.stringify(events).includes('Private reasoning'));
+});
+
+test('an aborted local request stops before another tool can execute', async () => {
+  const controller = new AbortController(), events: string[] = [];
+  const fetcher = (async () => {
+    controller.abort();
+    return new Response(JSON.stringify({ message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'recall', arguments: { query: '' } } }] } }));
+  }) as typeof fetch;
+  await assert.rejects(new LocalAssistant({ fetcher, web: false, signal: controller.signal }).run('Read memory', [], event => events.push(event.type)), /abort/i);
+  assert.ok(!events.includes('tool'));
+});

@@ -27,7 +27,7 @@ export interface UiDeps {
   /** Defaults to the real prompt enhancer; tests replace it. */
   enhance?: (idea: string, onStatus: (message: string) => void) => Promise<string>;
   /** Tests can supply a local assistant without starting Ollama. */
-  assistant?: (options: { model: string; deep: boolean; maxOutputTokens: number; web: boolean; workers: boolean; projectFiles: boolean; computer: boolean; whatsapp: boolean }) => Pick<LocalAssistant, 'run'>;
+  assistant?: (options: { model: string; deep: boolean; maxOutputTokens: number; web: boolean; workers: boolean; projectFiles: boolean; computer: boolean; whatsapp: boolean; signal: AbortSignal }) => Pick<LocalAssistant, 'run'>;
   assistantModels?: typeof assistantModels;
   assistantMemory?: MemoryStore;
   /** Tests may substitute the OpenAI transport and key; neither is sent to the browser. */
@@ -105,6 +105,11 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return void res.end(page);
     }
+    if (req.method === 'GET' && (path === '/assets/chat.css' || path === '/assets/chat.js')) {
+      const name = path === '/assets/chat.css' ? 'chat.css' : 'chat.js';
+      res.writeHead(200, { 'content-type': name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
+      return void res.end(readFileSync(new URL(`../ui/${name}`, import.meta.url), 'utf8'));
+    }
     if (req.method === 'GET' && path.startsWith('/images/')) return serveImage(decodeURIComponent(path.slice(8)), res);
 
     if (!path.startsWith('/api/')) throw new HttpError(404, 'Not found.');
@@ -169,14 +174,22 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
     const useWhatsApp = body.whatsapp === true;
     const history = Array.isArray(body.history) ? body.history.slice(-12) as ChatMessage[] : [];
     const send = stream(res);
+    const controller = new AbortController();
+    const signal = controller.signal;
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
     const approve = (description: string) => new Promise<boolean>((resolve) => {
+      if (signal.aborted) return resolve(false);
       const id = randomBytes(16).toString('hex');
-      const timer = setTimeout(() => { approvals.delete(id); resolve(false); }, 60_000);
-      approvals.set(id, (allowed) => { clearTimeout(timer); resolve(allowed); });
+      const finish = (allowed: boolean) => { clearTimeout(timer); approvals.delete(id); signal.removeEventListener('abort', cancel); resolve(allowed); };
+      const cancel = () => finish(false);
+      const timer = setTimeout(cancel, 60_000);
+      signal.addEventListener('abort', cancel, { once: true });
+      approvals.set(id, finish);
       send({ type: 'approval', id, description });
     });
     await enqueue(async () => {
       try {
+        signal.throwIfAborted();
         const route = chooseRoute(prompt, mode, Boolean(frontierKey), tier);
         send({ type: 'route', provider: route.provider, model: route.model ?? model, reason: route.reason });
         let answer: string;
@@ -185,17 +198,18 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
             throw new Error('Cloud request was not approved. Nothing was sent to the frontier model.');
           }
           answer = await answerWithFrontier(prompt, cloudHistory ? history : [], {
-            key: frontierKey, model: route.model!, maxInputTokens, maxOutputTokens, budget: frontierBudget, fetcher: deps.frontierFetch,
+            key: frontierKey, model: route.model!, maxInputTokens, maxOutputTokens, budget: frontierBudget, fetcher: deps.frontierFetch, signal,
           }, send);
         } else {
-          const assistant = deps.assistant?.({ model, deep, maxOutputTokens, web, workers, projectFiles, computer, whatsapp: useWhatsApp }) ?? new LocalAssistant({ model, deep, maxOutputTokens, web, workers, projectFiles, computer, whatsapp: useWhatsApp ? whatsapp : undefined, approve, memory });
+          const assistant = deps.assistant?.({ model, deep, maxOutputTokens, web, workers, projectFiles, computer, whatsapp: useWhatsApp, signal }) ?? new LocalAssistant({ model, deep, maxOutputTokens, web, workers, projectFiles, computer, whatsapp: useWhatsApp ? whatsapp : undefined, approve, memory, signal });
           usedAssistantModels.add(model);
           answer = await assistant.run(prompt, history, send);
         }
+        signal.throwIfAborted();
         send({ type: 'answer', content: answer });
         send({ type: 'done' });
       } catch (err) {
-        send({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        if (!signal.aborted) send({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       }
       res.end();
     }, () => send({ type: 'status', message: 'Waiting for the current local model job…' }));
