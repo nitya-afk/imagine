@@ -26,6 +26,8 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 - **Run Qwen-Image 2.1 GGUF locally** through a Metal-native backend, including the higher-quality uncensored Q6_K variant.
 - **Use it in your browser** (`imagine ui`): create, upload a photo and edit it, compare before and after, and keep editing.
 - **Use a local assistant** in the Assist tab: reasoning, writing, coding help, optional web lookup, persistent local memory, and bounded workers. Computer control and WhatsApp are opt-in.
+- **Research the public web automatically** for public-person/current-information questions and uncertain answers: broad keyless search, public pages/feeds/PDFs, alternative sources and visible snippet/page-read provenance. A search API key is optional; inaccessible pages are reported, not bypassed.
+- **Inspect and recover responses** with local run IDs, saved final answers, source/activity records and bounded diagnostic context. Longer chats disclose context omissions; interrupted actions are never automatically replayed.
 - **Route text requests intelligently**: keep Assist local, explicitly choose a frontier tier, or use Smart routing that asks before a complex request goes to OpenAI. Set input, output and session token limits.
 - **Edit photos like an editor**: remove or add things, change the background, change or swap faces, restyle, and extend the scene. Describe it in plain English and a local model plans the steps and checks each result.
 - **Write better prompts for you** (`--enhance`), using a local chat model.
@@ -547,7 +549,7 @@ imagine --help                                       # every option
 | `HF_TOKEN` | | for gated Hugging Face models |
 | `OLLAMA_HOST` | `127.0.0.1:11434` | your normal Ollama, read the same way Ollama reads it |
 | `OLLAMA_MODELS` | `~/.ollama/models` | the model folder shared with Ollama |
-| `BRAVE_SEARCH_API_KEY` | | optional broad web search for the assistant; without it, Wikipedia search is used |
+| `BRAVE_SEARCH_API_KEY` | | optional official Brave API for more reliable web search; keyless Brave/DuckDuckGo and limited Wikipedia are fallbacks |
 | `OPENAI_API_KEY` | | enables optional frontier text chat through the OpenAI Responses API |
 | `IMAGINE_FRONTIER_SESSION_TOKENS` | `20000` | maximum total cloud tokens reserved for this running UI server; not an account billing cap |
 

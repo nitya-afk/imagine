@@ -9,6 +9,7 @@ import { deflateSync } from 'node:zlib';
 import type { GenerateParams } from '../src/ollama.ts';
 import { crc32, withMetadata } from '../src/png.ts';
 import { createUiServer } from '../src/ui.ts';
+import { RunStore } from '../src/runs.ts';
 
 /** A real, minimal RGB PNG. */
 function tinyPng(width: number, height: number): Buffer {
@@ -42,6 +43,7 @@ before(async () => {
   ({ server, token } = createUiServer({
     version: '9.9.9',
     outputDir,
+    assistantRuns: new RunStore(join(outputDir, 'runs')),
     defaultModel: 'x/flux2-klein',
     listImageModels: async () => ['x/flux2-klein:latest', 'klein-4b-mxfp8:latest'],
     enhance: async (idea, onStatus) => {
@@ -276,6 +278,7 @@ test('jobs run one at a time', async () => {
   let most = 0;
   const { server: s, token: t } = createUiServer({
     version: '1',
+    assistantRuns: new RunStore(mkdtempSync(join(tmpdir(), 'imagine-ui-run-'))),
     outputDir: mkdtempSync(join(tmpdir(), 'imagine-ui-queue-')),
     defaultModel: 'm',
     listImageModels: async () => [],

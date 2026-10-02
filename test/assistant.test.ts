@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { LocalAssistant, MemoryStore, pickAssistantModel } from '../src/assistant.ts';
+import { assistantModels, LocalAssistant, MemoryStore, pickAssistantModel } from '../src/assistant.ts';
 import { describeComputerAction } from '../src/computer.ts';
 import { WhatsAppBridge } from '../src/whatsapp.ts';
 
@@ -11,6 +11,67 @@ const models = [
   { name: 'qwen3.5:4b', size: 3.4e9, capabilities: ['completion', 'tools'] },
   { name: 'qwen3.5:9b', size: 6.6e9, capabilities: ['completion', 'tools'] },
 ];
+test('real-style tags without capabilities discover chat models via show and enforce memory headroom', async () => {
+  const shown: string[] = [];
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith('/api/tags')) return Response.json({ models: [...models.map(({ name, size }) => ({ name, size })), { name: 'image', size: 2e9 }, { name: 'too-large', size: 40e9 }] });
+    const { model } = JSON.parse(String(init?.body)); shown.push(model);
+    return Response.json({ capabilities: model === 'image' ? ['image'] : ['completion', 'tools'] });
+  }) as typeof fetch;
+  const info = await assistantModels('http://127.0.0.1:11434', fetcher, 16e9);
+  assert.equal(info.defaultModel, 'qwen3.5:9b'); assert.equal(info.models.length, 2); assert.ok(!shown.includes('too-large'));
+});
+
+const searchCard = '<div data-type="web"><a href="https://example.com/nitya"><div class="search-snippet-title">Nitya Prakhar · Public profile</div></a><div class="generic-snippet">Founder of a software company.</div></div>';
+const pageReader = async (url: string) => ({ url, title: 'Public profile', text: 'Nitya Prakhar is a software founder.', links: [], truncated: false, format: 'html' });
+
+test('named-person question retrieves web evidence before the first local generation', async () => {
+  const requests: Array<Record<string, any>> = [], urls: string[] = [], events: Array<Record<string, unknown>> = [];
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+    urls.push(String(url));
+    if (!String(url).includes('/api/chat')) return new Response(searchCard);
+    const body = JSON.parse(String(init?.body)); if (body.messages.length) requests.push(body);
+    return Response.json({ message: { role: 'assistant', content: 'A software founder. [Public profile](https://example.com/nitya)' } });
+  }) as typeof fetch;
+  const answer = await new LocalAssistant({ fetcher, webReader: pageReader }).run('who is nitya prakhar', [], e => events.push(e));
+  assert.match(answer, /software founder/); assert.ok(urls[0]!.includes('search.brave.com'));
+  assert.match(requests[0]!.messages.at(-1).content, /Public web evidence/);
+  assert.match(requests[0]!.messages.at(-1).content, /Nitya Prakhar is a software founder/);
+  assert.ok(events.some(e => e.type === 'sources' && e.provider === 'Public page'));
+});
+test('uncertain answer automatically retries with public evidence, not history or memory', async () => {
+  let calls = 0; const urls: string[] = [];
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (!String(url).includes('/api/chat')) { urls.push(String(url)); return new Response(searchCard); }
+    const body = JSON.parse(String(init?.body)); if (!body.messages.length) return Response.json({});
+    return Response.json({ message: { role: 'assistant', content: ++calls === 1 ? "I don't know that public term." : 'Here is the source-backed explanation. [Source](https://example.com/nitya)' } });
+  }) as typeof fetch;
+  const answer = await new LocalAssistant({ fetcher, webReader: pageReader }).run('Explain Zorblax protocol', [{ role: 'user', content: 'A private prior conversation.' }]);
+  assert.match(answer, /source-backed/); assert.equal(calls, 2); assert.equal(urls.length, 1);
+  assert.ok(!decodeURIComponent(urls.join(' ')).includes('private prior'));
+});
+test('web off prevents both proactive lookup and uncertainty fallback', async () => {
+  const urls: string[] = [];
+  const fetcher = (async (url: string | URL | Request) => { urls.push(String(url)); return Response.json({ message: { role: 'assistant', content: "I don't know." } }); }) as typeof fetch;
+  await new LocalAssistant({ fetcher, web: false }).run('who is nitya prakhar');
+  assert.ok(urls.every(url => url.includes('/api/chat')));
+});
+test('local prompt length fails explicitly before any model or web call', async () => {
+  let calls = 0;
+  const fetcher = (async () => { calls++; throw new Error('Must not call'); }) as typeof fetch;
+  await assert.rejects(new LocalAssistant({ fetcher }).run('x'.repeat(12001)), /nothing was silently truncated/); assert.equal(calls, 0);
+});
+test('uncited/unsupported identity answer is repaired once then replaced with actual source links', async () => {
+  let calls = 0;
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (!String(url).includes('/api/chat')) return new Response(searchCard);
+    const body = JSON.parse(String(init?.body)); if (body.messages.length) calls++;
+    return Response.json({ message: { role: 'assistant', content: 'These are two different individuals. [Source](https://example.com/nitya)' } });
+  }) as typeof fetch;
+  const answer = await new LocalAssistant({ fetcher, webReader: pageReader }).run('who is nitya prakhar');
+  assert.equal(calls, 2); assert.match(answer, /I found these public sources/); assert.match(answer, /https:\/\/example.com\/nitya/);
+  assert.ok(!answer.includes('two different individuals'));
+});
 
 test('selects 4B for 8 GB and 9B for 16 GB when installed', () => {
   assert.equal(pickAssistantModel(models, 8e9), 'qwen3.5:4b');

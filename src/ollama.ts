@@ -33,8 +33,8 @@ export interface ModelInfo {
   capabilities: string[];
 }
 
-export async function listModels(host: string): Promise<ModelInfo[]> {
-  const res = await fetch(`${host}/api/tags`);
+export async function listModels(host: string, fetcher: typeof fetch = fetch): Promise<ModelInfo[]> {
+  const res = await fetcher(`${host}/api/tags`);
   if (!res.ok) throw await errorFrom(res);
   const body = (await res.json()) as {
     models?: Array<{ name: string; size?: number; capabilities?: string[] }>;

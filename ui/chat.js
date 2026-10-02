@@ -16,15 +16,16 @@
 
   // Render a small Markdown subset with DOM nodes; model text never becomes HTML.
   function inline(parent, text) {
-    const tokens = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g;
+    const tokens = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|<https?:\/\/[^\s>]+>)/g;
     let pos = 0;
     for (const match of text.matchAll(tokens)) {
       parent.append(document.createTextNode(text.slice(pos, match.index)));
       const token = match[0];
       if (token.startsWith('`')) parent.append(node('code', '', token.slice(1, -1)));
       else if (token.startsWith('**')) parent.append(node('strong', '', token.slice(2, -2)));
+      else if (token.startsWith('*')) { const emphasis = node('em'); inline(emphasis, token.slice(1, -1)); parent.append(emphasis); }
       else {
-        const parts = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
+        const parts = token.startsWith('<') ? [token, token.slice(1, -1), token.slice(1, -1)] : /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
         const link = node('a', '', parts[1]);
         link.href = parts[2]; link.target = '_blank'; link.rel = 'noopener noreferrer';
         parent.append(link);
@@ -71,13 +72,38 @@
     for (const line of lines) items.append(node('li', '', line));
     return { details, summary, items };
   }
-  function message(role, content, trace = [], error = false) {
+  function sourceList(items = []) {
+    const list = node('div', 'chat-sources');
+    for (const item of items) {
+      try {
+        const url = new URL(item.url); if (url.protocol !== 'https:' || url.username || url.password) continue;
+        const link = node('a', 'chat-source'); link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        link.append(node('span', 'source-domain', url.hostname.replace(/^www\./, '')), node('span', 'source-title', item.title || url.hostname), node('span', 'source-kind', item.kind === 'page' ? 'Page read' : 'Search snippet'));
+        list.append(link);
+      } catch { /* never render unsafe source links */ }
+    }
+    return list;
+  }
+  function collectSources(existing, items) {
+    for (const item of items || []) {
+      if (!item || typeof item.url !== 'string' || typeof item.title !== 'string') continue;
+      const old = existing.find(s => s.url === item.url);
+      if (!old) existing.push({ title: item.title, url: item.url, kind: item.kind });
+      else if (item.kind === 'page') old.kind = 'page';
+    }
+  }
+  function message(role, content, trace = [], error = false, turn) {
     const box = node('article', 'assistant-turn ' + (role === 'user' ? 'user' : 'agent'));
     const body = node('div', 'message-content', content);
     box.append(node('span', 'speaker', role === 'user' ? 'You' : 'Imagine'), body);
     if (role !== 'user') {
       markdown(body, content);
+      if (turn?.sources?.length) box.append(sourceList(turn.sources));
       if (trace.length) box.append(activity(trace).details);
+      if (turn?.runId) {
+        const recover = node('button', 'copy-message', turn.pending ? 'Check saved response' : 'Run details'); recover.type = 'button';
+        recover.onclick = () => recoverTurn(turn, recover, box); box.append(recover);
+      }
       const button = node('button', 'copy-message', 'Copy response'); button.type = 'button';
       button.onclick = () => copy(content, button); box.append(button);
       if (error) box.dataset.error = 'true';
@@ -106,8 +132,12 @@
       const select = node('button', 'chat-select', chat.title); select.type = 'button'; select.title = chat.title;
       select.onclick = () => { if (!state.busy) { active = chat; renderConversation(); saveChats(); } };
       const remove = node('button', 'chat-delete', '×'); remove.type = 'button'; remove.setAttribute('aria-label', `Delete ${chat.title}`);
-      remove.onclick = () => {
+      remove.onclick = async () => {
         if (state.busy || !confirm(`Delete “${chat.title}” from this browser?`)) return;
+        for (const id of new Set(chat.messages.map(m => m.runId).filter(Boolean))) {
+          try { const res = await api('/api/assistant/runs/' + encodeURIComponent(id), { method: 'DELETE' }); if (!res.ok) throw new Error(); }
+          catch { $('chat-storage-status').textContent = 'Could not delete the local run record. Conversation was preserved; try again.'; return; }
+        }
         chats = chats.filter(c => c.id !== chat.id);
         if (active.id === chat.id) active = blank();
         saveChats(); renderConversation();
@@ -122,7 +152,7 @@
   function renderConversation() {
     $('assistant-messages').replaceChildren();
     $('assistant-intro').hidden = active.messages.length > 0;
-    for (const turn of active.messages) message(turn.role, turn.content, turn.trace, turn.error);
+    for (const turn of active.messages) message(turn.role, turn.content, turn.trace, turn.error, turn);
     $('assistant-prompt').value = active.draft || '';
     $('chat-heading').textContent = active.title;
     renderList(); resizeComposer(); scrollToEnd(true);
@@ -137,6 +167,24 @@
     }
   } catch { storageReadable = false; $('chat-storage-status').textContent = 'Saved chats could not be read. Existing data was preserved; new chats are not saved.'; }
   active ??= blank(); renderConversation();
+  async function recoverTurn(turn, button, box) {
+    if (state.busy) return;
+    button.disabled = true;
+    try {
+      const res = await api('/api/assistant/runs/' + encodeURIComponent(turn.runId)); if (!res.ok) throw new Error((await res.json()).error);
+      const run = await res.json();
+      if (turn.pending && ['completed', 'failed', 'cancelled', 'interrupted'].includes(run.state)) {
+        turn.pending = false; turn.error = run.state !== 'completed';
+        turn.content = run.answer || `${run.error || 'Run stopped.'}\n\nNo computer actions or messages were automatically replayed.`;
+        turn.sources = []; run.events.filter(e => e.type === 'sources').forEach(e => collectSources(turn.sources, e.results));
+        turn.trace = run.events.map(e => e.message || (e.type === 'sources' ? `Sources: ${e.provider} · ${e.coverage}` : e.type === 'tool' ? `Using ${e.name}` : e.type === 'route' ? `${e.provider} · ${e.model}` : '')).filter(Boolean);
+        saveChats(); renderConversation(); return;
+      }
+      box.querySelector('.run-state')?.remove();
+      box.append(node('p', 'run-state', `Run ${run.id.slice(0, 8)} · ${run.state} · ${new Date(run.updatedAt).toLocaleString()}${turn.pending ? '. Still active or queued; check again shortly.' : ''}`));
+    } catch (error) { button.textContent = `Unavailable: ${error.message}`; }
+    finally { button.disabled = false; }
+  }
   $('new-chat').onclick = () => {
     if (state.busy) return;
     active.draft = $('assistant-prompt').value; saveChats(); active = blank(); renderConversation(); $('assistant-prompt').focus();
@@ -168,7 +216,7 @@
     const name = $('assistant-model').value.replace(':latest', '').replace('qwen3.5:', 'Qwen 3.5 ').replace('huihui_ai/', '').replace(/(\d+)b$/, '$1B');
     $('assistant-model-summary').textContent = mode === 'local' ? `${name || 'Local model'} · Local` : mode === 'smart' ? 'Smart routing' : `${$('assistant-tier').selectedOptions[0].textContent} · Frontier`;
     $('composer-hint').textContent = (mode === 'local' ? 'Replies on your Mac' : 'Cloud requests need your approval') + ' · Enter to send · Shift + Enter for a new line';
-    for (const id of ['assistant-web', 'assistant-workers', 'assistant-project', 'assistant-computer', 'assistant-whatsapp', 'assistant-deep']) $(id).disabled = mode === 'frontier';
+    for (const id of ['assistant-workers', 'assistant-project', 'assistant-computer', 'assistant-whatsapp', 'assistant-deep']) $(id).disabled = mode === 'frontier';
   }
   for (const id of ['assistant-mode', 'assistant-model', 'assistant-tier']) $(id).onchange = updateRoute;
   async function loadModels() {
@@ -228,24 +276,44 @@
     event.preventDefault(); if (state.busy) return;
     const prompt = $('assistant-prompt').value.trim(); if (!prompt) return;
     clearTimeout(draftTimer);
-    const chat = active, history = chat.messages.filter(m => !m.error).slice(-12).map(m => ({ role: m.role, content: m.content }));
+    const chat = active, prior = chat.messages.filter(m => !m.error && !m.pending), history = prior.slice(-48).map(m => ({ role: m.role, content: m.content }));
+    let omitted = prior.length - history.length;
+    while (history.length && history[0].role !== 'user') { history.shift(); omitted++; }
+    while (history.length && new TextEncoder().encode(JSON.stringify(history)).length > 50_000) {
+      history.shift(); omitted++;
+      while (history.length && history[0].role !== 'user') { history.shift(); omitted++; }
+    }
     if (!chat.messages.length) chat.title = prompt.replace(/\s+/g, ' ').slice(0, 65);
     chat.messages.push({ role: 'user', content: prompt }); chat.draft = ''; chat.updatedAt = Date.now();
-    saveChats(); renderConversation(); setBusy(true);
+    const savedTurn = { role: 'assistant', content: 'Response in progress. If this page reloads, check the saved response.', trace: [], sources: [], pending: true };
+    chat.messages.push(savedTurn);
+    saveChats(); renderConversation(); $('assistant-messages').lastElementChild?.remove(); setBusy(true);
     $('new-chat').disabled = true; $('assistant-submit').hidden = true; $('assistant-stop').hidden = false;
     controller = new AbortController();
-    const trace = [], approvals = [], run = activity();
+    const trace = [], sources = [], approvals = [], run = activity();
+    const liveSources = sourceList();
     run.summary.textContent = 'Thinking…'; $('assistant-messages').append(run.details);
     const response = message('assistant', ''); response.box.hidden = true;
+    $('assistant-messages').append(liveSources);
     let answer = '', completed = false, error = false;
     const log = text => { if (trace.at(-1) === text) return; trace.push(text); run.summary.textContent = text; run.items.append(node('li', '', text)); };
+    if (omitted) log(`${omitted} older messages omitted to fit the request size. Saved chat is unchanged.`);
     scrollToEnd(true);
     try {
       await stream('/api/assistant/chat', {
         method: 'POST', headers: { 'content-type': 'application/json' }, signal: controller.signal,
         body: JSON.stringify({ prompt, history, model: $('assistant-model').value, mode: $('assistant-mode').value, frontierTier: $('assistant-tier').value, cloudHistory: $('assistant-cloud-history').checked, maxOutputTokens: Number($('assistant-output-cap').value), maxInputTokens: Number($('assistant-input-cap').value), deep: $('assistant-deep').checked, web: $('assistant-web').checked, workers: $('assistant-workers').checked, projectFiles: $('assistant-project').checked, computer: $('assistant-computer').checked, whatsapp: $('assistant-whatsapp').checked }),
       }, ev => {
+        if (ev.type === 'run') { savedTurn.runId = ev.id; saveChats(); }
         if (ev.type === 'status') log(ev.message);
+        if (ev.type === 'context') log(ev.message);
+        if (ev.type === 'retrieval_error') log(`Could not read ${new URL(ev.url).hostname}: ${ev.message}`);
+        if (ev.type === 'sources') {
+          collectSources(sources, ev.results); savedTurn.sources = [...sources]; saveChats();
+          log(`${ev.provider} · ${ev.results?.length || 0} sources${ev.coverage === 'limited' ? ' · limited coverage' : ev.coverage === 'unavailable' ? ' · lookup unavailable' : ''}`);
+          for (const attempt of ev.attempts || []) log(`${attempt.provider}: ${attempt.outcome}`);
+          liveSources.replaceChildren(...sourceList(sources).childNodes); scrollToEnd();
+        }
         if (ev.type === 'route') log(`${ev.provider === 'frontier' ? 'Frontier' : 'Local'} · ${ev.model} · ${ev.reason}`);
         if (ev.type === 'tool') log(`Using ${ev.name.replaceAll('_', ' ')}…`);
         if (ev.type === 'response_start') { answer = ''; response.body.replaceChildren(); response.body.classList.remove('markdown'); response.box.hidden = true; }
@@ -275,8 +343,8 @@
       answer = controller.signal.aborted ? (answer ? `${answer}\n\nResponse stopped.` : 'Response stopped.') : `Could not finish: ${caught.message}`;
     } finally {
       for (const approval of approvals) { clearTimeout(approval.timer); approval.card.remove(); }
-      run.details.remove(); response.box.remove();
-      chat.messages.push({ role: 'assistant', content: answer || 'The model returned no answer.', trace, error }); chat.updatedAt = Date.now();
+      run.details.remove(); response.box.remove(); liveSources.remove();
+      Object.assign(savedTurn, { content: answer || 'The model returned no answer.', trace, sources, error, pending: !completed && !controller.signal.aborted && Boolean(savedTurn.runId) }); chat.updatedAt = Date.now();
       saveChats(); setBusy(false); controller = undefined;
       $('new-chat').disabled = false; $('assistant-submit').hidden = false; $('assistant-stop').hidden = true;
       renderConversation(); $('assistant-prompt').focus();

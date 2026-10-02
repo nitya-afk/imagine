@@ -446,7 +446,7 @@
       <div class="assistant-route-note" id="assistant-budget">Cloud is off until you configure an API key and approve a request.</div>
       <div class="assistant-options">
         <label class="toggle"><input type="checkbox" id="assistant-deep"><span>Deep reasoning<small>more thorough, but slower</small></span></label>
-        <label class="toggle"><input type="checkbox" id="assistant-web" checked><span>Internet lookup<small>public web pages and encyclopedia search</small></span></label>
+        <label class="toggle"><input type="checkbox" id="assistant-web" checked><span>Internet lookup<small>automatic broad search · public pages, feeds and PDFs · source links</small></span></label>
         <label class="toggle"><input type="checkbox" id="assistant-workers"><span>Specialist workers<small>sequential on small-memory Macs</small></span></label>
         <label class="toggle"><input type="checkbox" id="assistant-project"><span>Project files<small>read-only access to <span id="assistant-project-path">this folder</span></small></span></label>
         <label class="toggle"><input type="checkbox" id="assistant-computer"><span>Computer control<small>approve every screen read, click, and keystroke</small></span></label>
@@ -525,6 +525,8 @@
     <h3>Local by default. Frontier by choice.</h3>
     <p>Assist starts local. Smart routing suggests a frontier model for complex text requests when an API key is configured, and asks permission each time. Frontier mode lets you choose Luna, Sol or Astra. Cloud chat sends only your current text by default. You can opt in to include recent chat; no local files, screenshots, saved memory or WhatsApp messages are automatically attached. Token fields cap each request; the session budget limits use in this running app, not your provider bill.</p>
     <h3>More ways to work</h3>
+    <p>Internet lookup is on by default: public-person and current-information questions are searched automatically, and uncertain answers get a public-source check. It tries broad search providers before a limited encyclopedia fallback, follows readable page links, and shows what was a search snippet versus a page read. Public text, JSON, feeds and PDFs are supported; PDF extraction needs Poppler. Login-only pages, paywalls, CAPTCHAs, scanned documents and JavaScript-only pages may be unavailable. Turn Internet lookup off to prevent web requests.</p>
+    <p>Responses have locally saved run IDs, source activity and finished answers. If a reload interrupted the connection, use <strong>Check saved response</strong>. Server restarts do not replay actions. Longer chats use a bounded context estimate; any omitted old messages are reported. Run records may include your prompt and final answer; deleting a conversation also removes its associated run records on this Mac.</p>
     <ul><li>Terminal commands, an OpenAI-compatible image API and MCP tools for other assistants.</li><li>Import and quantize image models, add LoRAs, and reproduce past images from saved settings.</li><li>Computer actions and outgoing WhatsApp messages require individual approval. Mac permissions and WhatsApp pairing are separate setup steps.</li></ul>
     <div class="guide-foot"><a href="https://github.com/nitya-afk/imagine#what-it-can-do" target="_blank" rel="noopener noreferrer">Read the full guide ↗</a><button type="button" id="guide-done">Start exploring</button></div>
   </div>

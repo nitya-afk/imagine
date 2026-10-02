@@ -6,12 +6,14 @@ import { test } from 'node:test';
 import type { AddressInfo } from 'node:net';
 import { MemoryStore } from '../src/assistant.ts';
 import { createUiServer } from '../src/ui.ts';
+import { RunStore } from '../src/runs.ts';
 
 test('assistant UI routes keep the session token and stream answers', async () => {
   const folder = mkdtempSync(join(tmpdir(), 'imagine-assistant-ui-'));
   const memory = new MemoryStore(join(folder, 'memory.json'));
   const saved = memory.add('My preferred tone is concise');
   const { server, token } = createUiServer({
+    assistantRuns: new RunStore(join(folder, 'runs')),
     version: 'test', outputDir: folder, defaultModel: 'test-image',
     generate: async () => Buffer.alloc(0), listImageModels: async () => [],
     assistantMemory: memory,
@@ -35,8 +37,11 @@ test('assistant UI routes keep the session token and stream answers', async () =
     const chat = await api('/api/assistant/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: 'Hello' }) });
     assert.equal(chat.status, 200);
     const events = (await chat.text()).trim().split('\n').map((line) => JSON.parse(line));
-    assert.deepEqual(events.map((event) => event.type), ['route', 'status', 'answer', 'done']);
-    assert.equal(events[2].content, 'A local reply.');
+    assert.deepEqual(events.map((event) => event.type), ['run', 'route', 'status', 'answer', 'done']);
+    assert.equal(events[3].content, 'A local reply.');
+    const record = await (await api('/api/assistant/runs/' + events[0].id)).json();
+    assert.equal(record.state, 'completed'); assert.equal(record.answer, 'A local reply.');
+    assert.equal((await fetch(base + '/api/assistant/runs/' + events[0].id)).status, 401);
     const removed = await (await api(`/api/assistant/memory/${saved.id}`, { method: 'DELETE' })).json();
     assert.equal(removed.deleted, true);
     assert.deepEqual(memory.list(), []);
@@ -53,6 +58,7 @@ test('frontier routing requires per-request approval and never exposes the API k
   }) as typeof fetch;
   const { server, token } = createUiServer({
     version: 'test', outputDir: folder, defaultModel: 'test-image', generate: async () => Buffer.alloc(0), listImageModels: async () => [],
+    assistantRuns: new RunStore(join(folder, 'runs')),
     frontierKey: 'secret-test-key', frontierFetch,
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
@@ -90,6 +96,7 @@ test('disconnecting cancels a local run and lets the next queued chat finish', a
   const cancellation = new Promise<void>(resolve => { cancelled = resolve; });
   const { server, token } = createUiServer({
     version: 'test', outputDir: folder, defaultModel: 'image', generate: async () => Buffer.alloc(0), listImageModels: async () => [],
+    assistantRuns: new RunStore(join(folder, 'runs')),
     assistant: ({ signal }) => ({ run: async (prompt, _history, emit) => {
       if (prompt !== 'Cancel this') return 'Next run completed.';
       emit?.({ type: 'status', message: 'Started' });
@@ -117,6 +124,7 @@ test('disconnecting while waiting for cloud approval clears it and sends no clou
   let requests = 0;
   const { server, token } = createUiServer({
     version: 'test', outputDir: folder, defaultModel: 'image', generate: async () => Buffer.alloc(0), listImageModels: async () => [], frontierKey: 'test-key',
+    assistantRuns: new RunStore(join(folder, 'runs')),
     frontierFetch: (async () => { requests++; throw new Error('Must not send'); }) as typeof fetch,
     assistant: () => ({ run: async () => 'Queue is free.' }),
   });

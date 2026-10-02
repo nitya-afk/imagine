@@ -1,4 +1,11 @@
 /* A warm conversation desk beside Imagine's dark image studio. */
+.chat-sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 9px; margin: 16px 0; }
+.chat-source { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 9px; text-decoration: none; color: var(--ink); background: var(--panel); }
+.chat-source:hover, .chat-source:focus-visible { border-color: var(--amber); }
+.source-domain { color: var(--amber); font-size: 11px; }
+.source-title { font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.source-kind, .run-state { color: var(--ink-3); font-size: 11px; }
+.copy-message + .copy-message { margin-left: 14px; }
 body.assistant-mode {
   --black: #faf8f3; --panel: #fffefa; --raise: #f0ede5;
   --line: rgba(51,43,33,.09); --line-strong: rgba(51,43,33,.18);
