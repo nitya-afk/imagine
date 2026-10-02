@@ -303,6 +303,36 @@
   .guide-body a { color: var(--amber-hot); }
   .guide-foot { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .guide-foot button { border: 0; border-radius: 999px; background: var(--amber); color: #1a0d00; padding: 9px 16px; cursor: pointer; }
+  #guide-modal { width: min(980px, calc(100vw - 32px)); }
+  #guide-modal .guide-head { padding-bottom: 22px; position: sticky; top: 0; z-index: 2; background: var(--black); }
+  #guide-modal .guide-head p { color: var(--ink-2); font-size: 13px; margin: 10px 0 0; }
+  .guide-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); }
+  .guide-nav { position: sticky; top: 155px; align-self: start; display: grid; gap: 3px; padding: 24px 12px 24px 20px; }
+  .guide-nav a { color: var(--ink-2); text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: 12px; }
+  .guide-nav a:hover, .guide-nav a:focus-visible { color: var(--amber-hot); background: var(--raise); }
+  #guide-modal .guide-body { min-width: 0; border-left: 1px solid var(--line); }
+  .guide-chapter { padding-bottom: 24px; border-bottom: 1px solid var(--line); scroll-margin-top: 170px; }
+  .guide-chapter:last-of-type { border-bottom: 0; }
+  .guide-chapter h3 { margin-top: 24px; }
+  .guide-chapter p + p { margin-top: 12px; }
+  .guide-chapter ol { color: var(--ink-2); font-size: 13px; line-height: 1.7; padding-left: 22px; }
+  .guide-chapter li { margin-bottom: 7px; }
+  .guide-example { border-left: 2px solid var(--amber); background: var(--raise); border-radius: 0 8px 8px 0; padding: 14px; margin-top: 15px; }
+  .guide-example p { font-style: italic; }
+  .guide-example button, .guide-setting { border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; color: var(--amber-hot); padding: 7px 11px; margin-top: 10px; cursor: pointer; font: 12px var(--sans); }
+  .guide-note { color: var(--ink-3) !important; font-size: 12px !important; margin-top: 12px !important; }
+  .guide-chapter details { margin: 14px 0; }
+  .guide-chapter summary { color: var(--ink-2); cursor: pointer; font: 13px var(--sans); letter-spacing: 0; text-transform: none; }
+  .guide-chapter details p { margin-top: 9px; }
+  #guide-action-status { color: var(--amber-hot); font-size: 12px; }
+  @media (max-width: 650px) {
+    #guide-title { font-size: 25px; }
+    .guide-chapter { scroll-margin-top: 215px; }
+    .guide-layout { grid-template-columns: minmax(0, 1fr); }
+    .guide-nav { position: static; display: flex; flex-wrap: wrap; padding: 12px 18px; border-bottom: 1px solid var(--line); gap: 0; }
+    .guide-nav a { padding: 7px 9px; }
+    #guide-modal .guide-body { border-left: 0; }
+  }
 
   .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: grid; place-items: center; cursor: zoom-out; padding: 30px; }
   .lightbox img { max-width: 100%; max-height: 100%; border-radius: 4px; }
@@ -515,20 +545,90 @@
   </footer>
 </div>
 <dialog id="guide-modal" class="guide-modal" aria-labelledby="guide-title">
-  <div class="guide-head"><div><span class="edge">The field guide · imagine</span><h2 id="guide-title">What can you do here?</h2></div><button type="button" class="guide-close" id="guide-close" aria-label="Close guide">×</button></div>
+  <div class="guide-head"><div><span class="edge">The field guide · imagine</span><h2 id="guide-title">A little guidance. A lot of possibility.</h2><p>Start here, try a task, and know exactly what you’re giving access to.</p></div><button type="button" class="guide-close" id="guide-close" aria-label="Close guide">×</button></div>
+  <div class="guide-layout">
+  <nav class="guide-nav" aria-label="Guide chapters">
+    <a href="#guide-start">01 · Get started</a><a href="#guide-context">02 · Chat & memory</a><a href="#guide-web">03 · Research</a><a href="#guide-workers">04 · Specialist workers</a><a href="#guide-computer">05 · Your computer</a><a href="#guide-whatsapp">06 · WhatsApp</a><a href="#guide-cloud">07 · Local or cloud</a><a href="#guide-images">08 · Image studio</a><a href="#guide-trouble">09 · Troubleshooting</a><a href="#guide-privacy">10 · Privacy & limits</a>
+  </nav>
   <div class="guide-body">
-    <div class="guide-paths">
-      <article><strong>Create</strong><p>Make images from words. Choose FLUX or Qwen, size, seed, speed and quality. Save or vary the result.</p></article>
-      <article><strong>Edit</strong><p>Upload or paste a photo. Add, remove, restyle, change faces or extend the frame; compare before and after.</p></article>
-      <article><strong>Assist</strong><p>Ask a local model to reason, write or code. Turn on web, memory, project reading, workers, computer control or WhatsApp as needed.</p></article>
-    </div>
-    <h3>Local by default. Frontier by choice.</h3>
-    <p>Assist starts local. Smart routing suggests a frontier model for complex text requests when an API key is configured, and asks permission each time. Frontier mode lets you choose Luna, Sol or Astra. Cloud chat sends only your current text by default. You can opt in to include recent chat; no local files, screenshots, saved memory or WhatsApp messages are automatically attached. Token fields cap each request; the session budget limits use in this running app, not your provider bill.</p>
-    <h3>More ways to work</h3>
-    <p>Internet lookup is on by default: public-person and current-information questions are searched automatically, and uncertain answers get a public-source check. It tries broad search providers before a limited encyclopedia fallback, follows readable page links, and shows what was a search snippet versus a page read. Public text, JSON, feeds and PDFs are supported; PDF extraction needs Poppler. Login-only pages, paywalls, CAPTCHAs, scanned documents and JavaScript-only pages may be unavailable. Turn Internet lookup off to prevent web requests.</p>
-    <p>Responses have locally saved run IDs, source activity and finished answers. If a reload interrupted the connection, use <strong>Check saved response</strong>. Server restarts do not replay actions. Longer chats use a bounded context estimate; any omitted old messages are reported. Run records may include your prompt and final answer; deleting a conversation also removes its associated run records on this Mac.</p>
-    <ul><li>Terminal commands, an OpenAI-compatible image API and MCP tools for other assistants.</li><li>Import and quantize image models, add LoRAs, and reproduce past images from saved settings.</li><li>Computer actions and outgoing WhatsApp messages require individual approval. Mac permissions and WhatsApp pairing are separate setup steps.</li></ul>
-    <div class="guide-foot"><a href="https://github.com/nitya-afk/imagine#what-it-can-do" target="_blank" rel="noopener noreferrer">Read the full guide ↗</a><button type="button" id="guide-done">Start exploring</button></div>
+    <section class="guide-chapter" id="guide-start">
+      <h3>01 / Your first conversation</h3>
+      <ol><li>Start Ollama and install a chat model. Start with <strong>qwen3.5:4b</strong> on an 8 GB Mac; consider <strong>qwen3.5:9b</strong> on 16 GB or more. Disk size is not total memory use.</li><li>Open the model/settings button beneath the message box. Choose an installed model and <strong>Local only</strong>.</li><li>Give it a task, the relevant context, and the result you want. Enter sends; Shift + Enter adds a line.</li></ol>
+      <p>Examples below fill the message box for you. They never send a request or enable a tool automatically.</p>
+      <div class="guide-example"><p>Help me plan a small personal website. Ask three questions before suggesting a plan.</p><button type="button" data-guide-prompt="Help me plan a small personal website. Ask three questions before suggesting a plan.">Try this prompt ↗</button></div>
+      <button type="button" class="guide-setting" data-guide-setting="assistant-model">Choose a local model ↗</button>
+      <p class="guide-note">Tools other than Internet lookup start off. Check settings after a reload; tool choices are not saved as lasting preferences.</p>
+    </section>
+    <section class="guide-chapter" id="guide-context">
+      <h3>02 / Conversation is not permanent memory</h3>
+      <p>Continue in the same conversation for follow-ups. Chats and drafts are saved in this browser, but the model only receives a bounded recent context (8K tokens locally). Old exchanges can be omitted; response details report this. There is no automatic long-chat summary.</p>
+      <p>For persistent preferences, explicitly say <strong>“Remember that…”</strong>. Open <strong>Saved memory</strong> in settings to inspect or remove saved facts. Don’t save passwords or API keys. Saving a chat does not turn it into cross-chat memory.</p>
+      <div class="guide-example"><p>Remember that I prefer concise answers with a short example.</p><button type="button" data-guide-prompt="Remember that I prefer concise answers with a short example.">Try a memory request ↗</button></div>
+      <p class="guide-note">Short corrections can be misinterpreted. Until follow-up resolution improves, use “I meant Shoumitro Roye, not Roy. Research that person.” rather than “roye”.</p>
+    </section>
+    <section class="guide-chapter" id="guide-web">
+      <h3>03 / Research with visible evidence</h3>
+      <ol><li>Keep <strong>Internet lookup</strong> on (the default).</li><li>Ask a public question, explicitly request a search, or give a public HTTPS page to read. Add a full name, company or location when identity matters.</li><li>Open source links and response details. <strong>Search snippet</strong> means a search preview; <strong>Page read</strong> means the page text was retrieved—not that every claim was verified.</li></ol>
+      <div class="guide-example"><p>Search the web for the latest stable TypeScript release. Cite the official release announcement and state the release date.</p><button type="button" data-guide-prompt="Search the web for the latest stable TypeScript release. Cite the official release announcement and state the release date.">Try a research task ↗</button></div>
+      <p class="guide-note">Public pages, text, JSON, feeds and small text PDFs are supported. PDF extraction needs Poppler. No login, paywall or CAPTCHA bypass; JavaScript-only pages and scanned PDFs may be unreadable. Turn lookup off for sensitive tasks. Personal-site selection and contextual follow-up searches still need improvement.</p>
+      <button type="button" class="guide-setting" data-guide-setting="assistant-web">Find Internet lookup ↗</button>
+    </section>
+    <section class="guide-chapter" id="guide-workers">
+      <h3>04 / Ask for a second pair of eyes</h3>
+      <ol><li>Use <strong>Local only</strong> and enable <strong>Specialist workers</strong> in settings.</li><li>Ask for a specific delegated job: a critique, research pass, code review or draft. Supply the material and success criteria.</li><li>Look for <strong>delegate</strong> and <strong>Worker:</strong> activity in response details. A written claim about using a worker alone is not evidence.</li></ol>
+      <div class="guide-example"><p>Use a reasoning specialist worker to critique this plan: launch a personal website in one weekend. Identify three risks, then give me a revised plan.</p><button type="button" data-guide-prompt="Use a reasoning specialist worker to critique this plan: launch a personal website in one weekend. Identify three risks, then give me a revised plan.">Try a worker task ↗</button></div>
+      <p class="guide-note">Workers use the same local model sequentially to conserve memory. They get the delegated task, not the full chat; they are bounded read-only helpers, cannot spawn more workers or control the computer, and do not guarantee a better answer.</p>
+      <button type="button" class="guide-setting" data-guide-setting="assistant-workers">Find Specialist workers ↗</button>
+    </section>
+    <section class="guide-chapter" id="guide-computer">
+      <h3>05 / Let it see or act on your Mac</h3>
+      <ol><li>Use <strong>Local only</strong> and enable <strong>Computer control</strong>.</li><li>Start with a screen explanation. Read and approve the specific screenshot request; close private windows first.</li><li>If macOS denies access, open <strong>System Settings → Privacy & Security</strong>. Allow Screen Recording for screenshots and Accessibility for input to the app running Imagine (often your terminal). macOS may require you to reopen that app.</li><li>Try one action at a time and check the result. Each screen read, app opening, click, typed text and keypress needs its own approval.</li></ol>
+      <div class="guide-example"><p>Read my screen and explain the visible dialog. Do not click, type or change anything.</p><button type="button" data-guide-prompt="Read my screen and explain the visible dialog. Do not click, type or change anything.">Try a screen explanation ↗</button></div>
+      <p class="guide-note">This is a basic macOS bridge, not dependable unattended computer automation. No arbitrary shell tool or automatic action replay. Stop prevents future actions; it does not undo completed ones.</p>
+      <button type="button" class="guide-setting" data-guide-setting="assistant-computer">Find Computer control ↗</button>
+    </section>
+    <section class="guide-chapter" id="guide-whatsapp">
+      <h3>06 / Connect WhatsApp deliberately</h3>
+      <ol><li>In settings, select <strong>Connect WhatsApp</strong>.</li><li>On your phone open <strong>WhatsApp → Linked devices → Link a device</strong> and scan the QR code. Wait for a connected status.</li><li>Use <strong>Local only</strong> and enable <strong>WhatsApp access</strong>. Test with a new incoming text from someone you know.</li><li>For a send, provide the individual recipient’s country-code number and exact text. Verify both in the approval prompt.</li></ol>
+      <div class="guide-example"><p>Show my recently received WhatsApp texts. Do not send any messages.</p><button type="button" data-guide-prompt="Show my recently received WhatsApp texts. Do not send any messages.">Try a read-only request ↗</button></div>
+      <p class="guide-note">Baileys is an unofficial connection. Only a bounded set of recently received texts is available, not full historical chat. No automatic replies, group broadcasts or bulk messaging. Unlink Imagine from Linked devices on your phone to revoke its connection.</p>
+      <button type="button" class="guide-setting" data-guide-setting="assistant-whatsapp">Find WhatsApp setup ↗</button>
+    </section>
+    <section class="guide-chapter" id="guide-cloud">
+      <h3>07 / Choose intelligence, access and cost</h3>
+      <p><strong>Local only</strong> keeps inference on your Mac and supports enabled local tools. <strong>Smart</strong> uses a simple heuristic to suggest cloud text help for complex tasks. <strong>Frontier</strong> requests the selected cloud tier. Cloud use needs a server-side API key and approval before every request.</p>
+      <p>Cloud requests exclude earlier chat by default. Enable <strong>Include recent chat in cloud requests</strong> if a follow-up needs it. Saved memory, project files, screenshots and WhatsApp are not automatically attached. Workers and computer actions do not run on the cloud route; public retrieval is available.</p>
+      <p><strong>Max answer tokens</strong> caps each response, including reasoning. <strong>Max cloud input tokens</strong> limits input per request. The app’s session budget is not a provider billing cap and resets with the server. Multiple calls can consume the budget.</p>
+      <p class="guide-note">Deep reasoning, larger models and extra workers can all take longer. Try the default answer cap before lowering it; a tiny cap can leave no visible answer.</p>
+      <button type="button" class="guide-setting" data-guide-setting="assistant-mode">Explore routing settings ↗</button>
+    </section>
+    <section class="guide-chapter" id="guide-images">
+      <h3>08 / Create, then refine</h3>
+      <p><strong>Create:</strong> select an installed image model, describe subject, composition, lighting and style, then choose frame and image count. Start with one image. Qwen speed presets trade detail for latency; quality presets take longer. There is no universal fast-and-best setting.</p>
+      <p><strong>Edit:</strong> upload or paste a photo, or select a generated image, then describe what to change and what must stay. Compare before and after; use <strong>Keep editing</strong> for another pass. Face references and frame extension have dedicated controls.</p>
+      <p><strong>Contact sheet:</strong> download, vary or edit a result. A fixed seed and the same model/settings help reproduce it. Image deletion skips the Trash and is permanent—download anything you want to keep first.</p>
+      <p class="guide-note">Chat tools are not an image-generation tool. Use Create or Edit for images. Image and chat jobs share a queue to avoid competing for the GPU.</p>
+    </section>
+    <section class="guide-chapter" id="guide-trouble">
+      <h3>09 / When something doesn’t work</h3>
+      <details><summary>No model, or “Ollama unavailable”</summary><p>Start Ollama, install a chat model, then refresh Imagine. Image models and chat models are separate. The written guide below includes installation commands.</p></details>
+      <details><summary>Slow, queued, or apparently stuck</summary><p>Check response details: loading, search, worker and approval waits are different. Finish or stop another queued job, close memory-heavy apps, try a smaller model, or disable Deep reasoning and workers. Use Stop before resubmitting. More workers are not a speed boost.</p></details>
+      <details><summary>It forgot the topic or searched the wrong name</summary><p>Restate the full subject and request in the same chat. Check for context omissions. On cloud requests, check the recent-chat option. Saved transcripts are not unlimited model memory; follow-up interpretation can still fail.</p></details>
+      <details><summary>Search shows links but no useful answer</summary><p>Check snippet/page-read labels and retrieval errors. Provide a direct public HTTPS URL and identifying detail. Blocked pages are not bypassed, and current identity-source selection can omit personal websites. Never treat a missing result as proof that someone doesn’t exist.</p></details>
+      <details><summary>Workers, computer or WhatsApp do nothing</summary><p>Check the relevant switch, select Local only, and inspect response details for an actual tool call. Computer control also needs macOS permissions; WhatsApp needs pairing. Enabling a switch allows a tool—it does not force the model to use it.</p></details>
+      <details><summary>A refresh lost the response</summary><p>Use Check saved response. Run details explains completed, failed, cancelled or interrupted state. Only completed answers can be recovered; tasks and external actions are not automatically resumed.</p></details>
+      <details><summary>Cloud unavailable, refused, or out of budget</summary><p>Check the server’s API-key setup, model/account access and the visible error. Denied approval sends nothing. Use Local only to avoid paid requests; restarting resets the app budget but not provider usage.</p></details>
+    </section>
+    <section class="guide-chapter" id="guide-privacy">
+      <h3>10 / Know what stays and what leaves</h3>
+      <p>Chats and drafts live in this browser; saved facts and run records live on this Mac. Run records can contain prompts, answers, diagnostic excerpts and approval descriptions. They have restricted file permissions but are <strong>not encrypted</strong>. Clearing browser storage alone does not remove server-side run records.</p>
+      <p>Local inference does not make enabled web lookup or WhatsApp offline. Search queries go to search providers; reading a page contacts that site. Approved cloud text goes to the provider. For offline work, choose Local only, turn Internet lookup off, and unlink any paired WhatsApp connection. Turning WhatsApp access off alone does not disconnect it.</p>
+      <p>Project files are read-only within the launch folder. The assistant cannot directly edit files, execute arbitrary commands, guarantee factual accuracy, or act as an unrestricted unattended agent. Workers share the parent’s bounded call budget. Every computer action and outgoing WhatsApp text needs approval.</p>
+      <p class="guide-note">The full written guide includes install commands, data locations, task recipes and a capability checklist. The harness assessment lists engineering gaps separately.</p>
+    </section>
+    <p id="guide-action-status" role="status" aria-live="polite"></p>
+    <div class="guide-foot"><a href="/guide/assistant" target="_blank" rel="noopener noreferrer">Full written guide ↗</a><button type="button" id="guide-done">Back to Imagine</button></div>
+  </div>
   </div>
 </dialog>
 <div class="lightbox" id="lightbox" hidden><img alt=""></div>
@@ -556,6 +656,23 @@ $('guide-open').onclick = openGuide;
 $('guide-close').onclick = $('guide-done').onclick = () => guide.close();
 guide.addEventListener('click', (e) => { if (e.target === guide) guide.close(); });
 $('welcome-guide').onclick = openGuide;
+guide.querySelectorAll('[data-guide-prompt], [data-guide-setting]').forEach(button => {
+  button.addEventListener('click', () => {
+    if (state.busy) { $('guide-action-status').textContent = 'Finish or stop the current job before trying a guide action.'; return; }
+    if (button.dataset.guidePrompt && $('assistant-prompt').value.trim() && !confirm('Replace your current draft with this example?')) return;
+    guide.close();
+    selectTab('assistant');
+    if (button.dataset.guidePrompt) {
+      const prompt = $('assistant-prompt');
+      prompt.value = button.dataset.guidePrompt; prompt.dispatchEvent(new Event('input')); prompt.focus();
+    } else {
+      $('assistant-settings').showModal();
+      const control = $(button.dataset.guideSetting);
+      control.scrollIntoView({ block: 'center' }); control.focus();
+    }
+  });
+});
+guide.addEventListener('close', () => { $('guide-action-status').textContent = ''; });
 
 /** Read a newline-delimited JSON stream, calling onEvent for each line as it arrives. */
 async function stream(path, init, onEvent) {

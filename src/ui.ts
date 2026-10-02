@@ -112,6 +112,11 @@ export function createUiServer(deps: UiDeps): { server: Server; token: string } 
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return void res.end(page);
     }
+    // Fixed, bundled documentation only: no user path, secret or API token is included.
+    if (req.method === 'GET' && path === '/guide/assistant') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      return void res.end(readFileSync(new URL('../docs/ASSIST.md', import.meta.url), 'utf8'));
+    }
     if (req.method === 'GET' && (path === '/assets/chat.css' || path === '/assets/chat.js')) {
       const name = path === '/assets/chat.css' ? 'chat.css' : 'chat.js';
       res.writeHead(200, { 'content-type': name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });

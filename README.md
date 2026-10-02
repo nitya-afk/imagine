@@ -37,7 +37,7 @@ All made on a MacBook Pro (M5 Pro, 24 GB) in 11–40 seconds each with FLUX.2 Kl
 - **Plug into apps and AI assistants** through an OpenAI-compatible API and an MCP server.
 - **Benchmark your Mac** and share the result.
 
-For a task-by-task tour of the assistant, its permissions and its limits, see the [Assist guide](docs/ASSIST.md).
+For setup, step-by-step task recipes, permission checks, troubleshooting and privacy, see the [full Assist guide](docs/ASSIST.md). In the app, **? What can I do** opens a ten-chapter field guide with example prompts and shortcuts to the relevant settings. Examples fill the composer without sending; shortcuts never turn on tools for you. The complete written guide is also available locally through its **Full written guide** link, without visiting GitHub.
 
 ![imagine in the terminal: an enhanced prompt and a benchmark](https://raw.githubusercontent.com/nitya-afk/imagine/main/docs/examples/terminal.png)
 
